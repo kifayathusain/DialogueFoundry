@@ -1,8 +1,9 @@
 # Structured conversation JSON (version 1)
 
-M12 supplies a document API in `ttsapp.conversation_document`. Desktop import,
-voice mapping, generation and JSON CLI integration belong to M13–M16. Existing
-`Speaker: text` input is unchanged. See the [sample](tts-sample.json),
+The document API in `ttsapp.conversation_document` is shared by desktop import,
+voice mapping, structured generation and the JSON CLI. Existing `Speaker: text`
+input is unchanged. Desktop acceptance still awaits 150%/200% OS scaling checks;
+see the milestone tracker. See the [sample](tts-sample.json),
 [optional-field example](tts-input-example.json) and
 [JSON Schema](tts-input.schema.json).
 
@@ -18,13 +19,13 @@ empty) and `speech` objects with optional numeric `speed` (default unset).
 Speakers also accept `voice_defaults`, an object mapping trimmed provider IDs to
 trimmed voice IDs. M12 validates their shape without resolving providers or
 checking models. Directions are preserved notes; they do not control synthesis.
-Later effective speed precedence is segment > role > job > provider default.
-Explicit Edge speed is unsupported and must be rejected by later generation
-validation. Importing this example does not synthesize anything.
+Effective speed precedence is segment > role > job > provider default.
+Explicit Edge speed is unsupported and is rejected by generation
+preflight. Importing this example does not synthesize anything.
 
 Segments accept `pause_after_seconds`, default zero, including fractional values
-and the final segment's pause. M14 will render these as PCM silence; M12 only
-preserves and validates them. Existing five-second sentence/paragraph settings
+and the final segment's pause. Structured generation renders these as exact PCM silence,
+including the final after-pause, using round(sample_rate × seconds) frames. Existing five-second sentence/paragraph settings
 are separate and unchanged.
 
 Limits are centralized in the document module:
@@ -89,5 +90,41 @@ hashes use sorted-key compact UTF-8 JSON and exclude active identity/revision.
 revision; invalid edits leave the old snapshot intact. Explicit
 `load_document(path, reload_of=active)` (or either parse function's `reload_of`)
 retains active identity and advances revision. Only pass `reload_of` when the
-caller intentionally reloads the same active source; M15 will manage that UI
-decision, and M16 will persist project identity.
+caller intentionally reloads the same active source. Desktop imports start fresh;
+explicit project opening restores its saved identity/revision and assignments.
+
+
+## Mapping and generation
+
+Assignment precedence is current edit > explicitly opened matching project >
+valid imported provider default > enabled exact role/provider/locale preset >
+deterministic catalog default. Defaults rank locale, file-presence hint, unused
+voice and stable catalog order. Presence is not integrity verification. Every
+declared role receives a voice; only used roles need ready assets. Shared IDs
+are warned about and do not guarantee distinct delivery. Custom nonempty Edge
+IDs remain editable; local IDs must match the catalog, including full Piper
+model/speaker IDs. Import/filtering never loads weights or discovers voices online.
+
+Free-text directions remain visible notes, never guessed speed/pitch/emotion.
+Only dialogue chunks reach synthesis. Supported speed resolves segment > role >
+job > provider default. An untouched disabled Edge job-speed display is not an
+explicit request. Role/segment speed overrides still fail for Edge.
+
+Each segment is chunked independently with normalized source spans. Optional
+sentence silence occurs only inside its segment. JSON paragraph whitespace adds
+no boundary pause; every explicit after-pause occurs once after its last chunk,
+including final silence. Provider natural silence is retained. Sub-frame pauses
+rounding to zero create no file. Legacy sentence/paragraph bounds stay at five
+seconds. The unchanged sample has 3 roles, 26 segments and 84 seconds of explicit
+silence, including its final 30 seconds.
+
+The additive service inputs are `document=ConversationDocument` and
+`voice_assignments={speaker_id: stable_voice_id}`. A document cannot accompany
+`input_text` or a nondefault explicit file source. File callers explicitly choose
+the document parser or legacy parser; the service does not guess file format.
+Structured calls always use processed generation, including native Edge MP3
+decoding. Existing legacy unprocessed Edge stream-copy behavior is preserved.
+Version-2 `generation.json` records identity/revision, selected voices, effective
+settings, source hashes, ordered speech/silence states and request hashes.
+It contains no private dialogue or direction-note bodies and does not resume
+or reuse previous chunks. See [projects/CLI](PROJECTS_AND_CLI.md).

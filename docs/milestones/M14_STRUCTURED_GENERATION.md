@@ -36,3 +36,69 @@ Generate structured conversations through the existing service with correct voic
 ## Verification and completion
 
 Add fake-provider structured service/generation tests and synthetic-media integration tests. Use deterministic non-speech fixtures to verify durations and final silence, not listening. Test cancellation at each relevant stage and modified metadata hashes. Do not run live TTS, model integrations, benchmarks or exhaustive voice tests. Record M14 evidence and any absent FFmpeg prerequisite; missing required media checks cannot be called a pass.
+
+## M14 implementation evidence — 2026-10-26
+
+Status: DONE. The additive keyword-only service document/voice_assignments inputs
+use M13 preflight and route all structured providers through processed generation.
+Explicit text/file conflicts fail. All chunks/configurations and export targets
+validate before job creation/synthesis. Legacy positional/text paths remain intact.
+No paragraph gaps are introduced by JSON boundaries; optional intra-segment
+sentence pauses and one explicit after-pause per segment are planned separately.
+
+Version 2 generation metadata records document identity/revision, resolved voices,
+per-segment effective speed/source and ordered speech/silence states, without source
+dialogue or private notes. Request hashes include source content, mappings, speed
+and pauses. Native Edge MP3 decodes once per chunk; local PCM remains native.
+After-silence is streamed in cancellable workers using round(rate * seconds),
+including final silence. Zero-frame rounded durations materialize no file. Existing
+export preparation reconciles layouts and handles normalization, validated codecs,
+cancellation, overwrite and atomic publication. Legacy fast Edge routing is retained.
+
+Environment/tools match M12. Reviewed new test fixtures synthesize only bounded
+programmatic non-speech PCM or copy a synthetic MP3; no external provider is called.
+Focused M14/legacy run: 53 passed and one transient Windows atomic metadata replace
+PermissionError; isolated changed/relevant recheck: 31 passed, failure not reproduced.
+Broad allowlist (M12_OFFLINE_TESTS.txt plus test_speaker_mapping.py and
+test_structured_generation.py) initially passed 400 cases. Final verification adds
+normalized WAV/MP3/M4A coverage and accurately records completed speech when an
+after-pause is cancelled. Exact command from repository root:
+
+    $env:PYTEST_DISABLE_PLUGIN_AUTOLOAD='1'
+    $env:TTS_FFMPEG_TESTS='1'
+    $env:TTS_EXPORT_TESTS='1'
+    $env:PATH=(Resolve-Path .venv-backup/ffmpeg-toolset).Path+[IO.Path]::PathSeparator+$env:PATH
+    $auditedTests=Get-Content docs/milestones/M12_OFFLINE_TESTS.txt
+    .\.venv-backup\python313-official\python.exe -m pytest @auditedTests tests/test_speaker_mapping.py tests/test_structured_generation.py -q --basetemp=.venv/m14-final -o cache_dir=.venv/m14-cache --tb=short
+
+Runs use permitted execution for Windows asyncio local socket-pair support.
+Sample proof: 26 after-pause items, 84 * 16000 exact zero PCM frames, last 30 seconds,
+monotonic 26 segment completions, ordered source span coverage and dialogue-only
+fake requests. Zero, sub-frame, fractional and 600-second silence cases pass.
+Failure/cancellation preserve prior output; blocking decode/silence/export workers
+finish cleanup before cancellation returns. Synthetic MP3 decode and WAV/MP3/M4A
+exports retain trailing silence within codec tolerances, with/without normalization.
+Existing synthetic mixed-layout, timeout/export and legacy regressions pass.
+
+Changed-file commands:
+`ruff.exe format --check ttsapp/service.py ttsapp/generation.py tests/test_structured_generation.py`
+and `ruff.exe check` on the same paths (existing .venv-backup/quality-tools/bin).
+Repository-wide format/check retain the same five format differences and two I001
+findings listed in M13; no introduced findings or suppressions.
+Manual review passes readable typed additive interfaces, focused responsibilities,
+explicit control flow/errors, one provider per job, hashing privacy and resource
+cleanup. M12 excluded test files/reasons remain excluded; no prohibited activity
+or clean-machine/provider-quality claim. No required M14 gate unavailable.
+
+Normalization fixture correction: the first added cases used DC-level near-silent
+PCM, correctly rejected by the exporter as unmeasurable. Replaced the media-only
+fixture with a one-second 440 Hz non-speech tone per request; no export relaxation.
+
+Final corrected command uses basetemp .venv/m14-final-tones: **403 passed in
+19.24 seconds**, no skips/failures. Three changed files pass Ruff format/check.
+Completion gate passed: acceptance, audited regressions, cancellation/cleanup,
+Ruff/manual review, compatibility and documentation.
+
+M17 integration follow-up: typed per-segment metadata and explicit assignment
+hash; bounded Windows sharing-error metadata retries. Final approved 31-file
+regression: 457 passed. See [current verification](M13_M17_VERIFICATION.md).

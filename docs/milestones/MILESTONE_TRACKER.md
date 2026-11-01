@@ -30,11 +30,11 @@ established status on later edits and record compliance evidence separately.
 | M10 | Windows Packaging and Final QA | BLOCKED | Local standalone tests pass; clean Windows 11 evidence required; [details](M10_PACKAGING.md) |
 | M11 | Complete British and American English Voice Library | DONE | Passed all 2,034 CPU voice checks, Windows UI/media and regression gate; [evidence](M11_ENGLISH_VOICES.md) |
 | M12 | JSON Document Contract and Validation | DONE | Passed audited offline document/regression gate; [evidence](M12_JSON_DOCUMENT_CONTRACT.md) |
-| M13 | Role-to-Voice Mapping and Effective Settings | NOT_STARTED | Pending; [scope](M13_ROLE_VOICE_MAPPING.md) |
-| M14 | Structured Generation and Exact Segment Pauses | NOT_STARTED | Pending; [scope](M14_STRUCTURED_GENERATION.md) |
-| M15 | Responsive Multi-Speaker Windows GUI | NOT_STARTED | Pending; [scope](M15_RESPONSIVE_GUI.md) |
-| M16 | Saved Projects, Presets and JSON CLI | NOT_STARTED | Pending; [scope](M16_PROJECTS_PRESETS_CLI.md) |
-| M17 | Integrated Acceptance and Documentation | NOT_STARTED | Pending; [scope](M17_INTEGRATED_ACCEPTANCE.md) |
+| M13 | Role-to-Voice Mapping and Effective Settings | DONE | Passed offline mapping gate; [scope](M13_ROLE_VOICE_MAPPING.md) |
+| M14 | Structured Generation and Exact Segment Pauses | DONE | Passed fake-provider/synthetic-media gate; [scope](M14_STRUCTURED_GENERATION.md) |
+| M15 | Responsive Multi-Speaker Windows GUI | BLOCKED | Native fake-provider UI passes at 100%; required 150%/200% OS scaling evidence missing; [scope](M15_RESPONSIVE_GUI.md) |
+| M16 | Saved Projects, Presets and JSON CLI | BLOCKED | Implemented/tested; M15 dependency gate remains open; [scope](M16_PROJECTS_PRESETS_CLI.md) |
+| M17 | Integrated Acceptance and Documentation | BLOCKED | Integrated safe checks/docs pass; M15/M16 completion gates remain open; [scope](M17_INTEGRATED_ACCEPTANCE.md) |
 
 “Pending” means the milestone has not been reviewed against the new gate. The
 standards/configuration update does not complete or reopen an application
@@ -244,3 +244,68 @@ Temporary validation installations and redundant new build directories were
 removed; earlier artifacts and user models remain intact. No human quality,
 clean-machine, signing, public release, commit or push claim. M01–M09 remain
 DONE; M10 remains BLOCKED exactly as authorized when M11 began.
+
+### M13 completion — 2026-10-26
+
+Gate passed: [M13 evidence](M13_ROLE_VOICE_MAPPING.md). Focused 175 passed;
+audited broad regressions 379 passed. Two changed Python files pass Ruff and
+manual readability/architecture review; repository baseline unchanged. Mapping,
+identity, precedence, readiness, speed and notes gates pass in the approved fake
+scope. Exclusions remain M12's documented list. M14 may begin; M10 stays BLOCKED.
+
+### M14 completion — 2026-10-26
+
+Gate passed: [M14 evidence](M14_STRUCTURED_GENERATION.md), 403 audited tests
+passed including fake MP3/WAV, exact final silence, normalized WAV/MP3/M4A,
+validation-before-side-effects and blocking-stage cancellation cleanup. Three
+changed files pass Ruff and manual review; repository findings unchanged.
+M15 may begin. Historical M10 remains BLOCKED.
+
+
+### M13–M17 current authorization and integrated evidence — 2026-10-26
+
+The user explicitly authorized sequential M13–M17 and automatic continuation.
+The historical M12-only boundary above is preserved as that session's record.
+M13/M14 gates passed in order before M15 implementation. After M15's required
+OS scaling gap was established, independent storage/CLI, integration tests and
+documentation continued under the user's blocker instruction. No downstream
+DONE transition is inferred from implemented files or passing independent tests.
+
+[Full verification and traceability](M13_M17_VERIFICATION.md);
+[31-file audited allowlist](M13_M17_OFFLINE_TESTS.txt). Final broad result:
+**457 passed in 37.25 seconds**, no skips/failures. Exact command uses
+.venv-backup/python313-official/python.exe, PYTEST_DISABLE_PLUGIN_AUTOLOAD=1,
+TTS_FFMPEG_TESTS=TTS_EXPORT_TESTS=1, existing FFmpeg tools and Tcl/Tk paths,
+basetemp .venv/m13-m17-verified and cache .venv/m13-m17-cache.
+The report records prior failed/intermediate runs separately, including corrected
+synthetic normalization fixtures/test assumptions and the bounded Windows metadata
+sharing-error integration fix. No repeated voice testing occurred.
+
+All 14 changed Python files pass Ruff format/lint and Python 3.10 syntax parsing.
+Repository baseline now has I001 in tests/test_parser.py only and four untouched
+format differences (gen_audio.py, tests/test_audio_combiner.py, tests/test_parser.py,
+tests/test_tts_engine.py). main.py's prior findings were fixed within its CLI edit.
+Manual readability/type/error/privacy/architecture review passes. No suppressions,
+bulk formatting or unrelated changes. Exact tooling and exclusions are in the report.
+
+- [x] M13/M14 required acceptance, tests, failure/cancel/cleanup, changed Ruff,
+      repository findings, manual review, boundaries and documentation pass.
+- [x] M15 implemented import/edit/mapping/validation/preview and responsive
+      scrollable Tk controls; native fake-provider tests include 1/3/20/1000 roles,
+      long labels/IDs, stale revisions, unsaved flows, cancellation and close.
+- [x] M16 independent project/preset persistence and additive JSON CLI acceptance
+      passes, including shared service parity and no-argument legacy behavior.
+- [x] M17 integrated sample export/project/reopen/CLI and compatibility checks,
+      traceability, exclusions and current guides/architecture are recorded.
+- [ ] M15 actual Windows 150%/200% OS scaling and associated all-controls keyboard
+      evidence. Host report: DPI96/100%, 1920×1080 screen, 1024×768 test window.
+      Existing Windows Settings launch via Computer Use returned
+      "Computer Use app approval timed out"; no display settings changed.
+- [ ] M16 dependency gate: M15 DONE.
+- [ ] M17 dependency/final gate: M15/M16 DONE.
+
+M15/M16/M17 remain BLOCKED; implementation/testing is not a waiver. M12 and all
+historical statuses/evidence are preserved, including M10 BLOCKED on clean Windows
+11 acceptance. No downloads, real synthesis, voice-quality/comparison/listening
+checks, benchmarks, exhaustive M11 validation, package rebuild, install, commit,
+push or publication.

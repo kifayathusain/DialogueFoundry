@@ -41,3 +41,25 @@ Let users reopen an edited conversation with its mappings/settings, reuse chosen
 ## Verification and completion
 
 Use temporary project/preset files, fake providers and mocked CLI boundaries. Test malformed data, changed/missing source, identity collisions, overrides, atomic failures, interrupt cleanup and no-argument compatibility. Document schemas and CLI examples. Do not test the CLI by invoking real voices. Record M16 evidence.
+
+
+## Implementation and gate evidence — 2026-10-26
+
+Status: **BLOCKED** on M15's completion gate. Independent authorized implementation
+and acceptance are present: bounded versioned atomic embedded projects, stable
+identities/all-provider mappings/settings/locale, inert source provenance, opt-in
+exact role/provider/locale presets, GUI Save/Open/Apply wiring, shared JSON CLI,
+provider/map validation, overwrite safety and finally session cleanup.
+The no-argument main.main/python main.py path and gen_audio.py remain compatible.
+No project locator is read/fetched and invalid explicit selections stay visible.
+Passing independent tests does not bypass M15's missing OS scaling evidence.
+
+Full commands, environment, changed scope, traceability, prior corrected failures,
+Ruff/manual review, exclusions and remaining gate checklist are recorded in
+[M13–M17 verification](M13_M17_VERIFICATION.md). The explicit 31-file allowlist
+passes **457 tests in 37.25 seconds** without skips/failures. All 14 changed Python
+files pass Ruff and manual readability/privacy/architecture review; repository
+findings are recorded separately. Failure, cancellation and cleanup tests pass.
+No downloads, real inference, live synthesis, listening/comparison, benchmarks,
+M11 rerun, package rebuild, dependency install, commit, push or release.
+M10's historical BLOCKED status is unchanged.

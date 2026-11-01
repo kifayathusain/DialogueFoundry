@@ -37,3 +37,27 @@ Provide a modern, keyboard-usable Tkinter workflow to import and edit structured
 ## Verification and completion
 
 Use injected provider/catalog/model sources for Tkinter acceptance; no real voice preview or model download. Cover queued states, dirty flows, role replacement, cancellation, stale revisions, resize and widget cleanup. Add a small layout/accessibility checklist and actual Windows observations. Do not add screenshot-golden tests that merely mirror widget implementation. Record M15 evidence and unresolved scaling/UI gates rather than inventing completion.
+
+
+## Implementation and gate evidence — 2026-10-26
+
+Status: **BLOCKED**. Structured desktop implementation is present and native
+fake-provider checks pass. Open/import, separate Plain text/JSON sources, dynamic
+role/segment editors, validation navigation, JSON Save As, dirty prompts,
+collapsible exports, scroll/focus layout, revision-safe worker snapshots and
+speech-only preview use the shared document/resolver/service. Source IDs and
+unknown extensions are preserved. Legacy provider/model/export/preview controls
+remain. Required actual 150%/200% OS scaling and keyboard checks are unavailable;
+the host reports DPI96/100%, 1920×1080, with a 1024×768 test window. A Settings
+launch returned "Computer Use app approval timed out"; no OS settings changed.
+Do not mark DONE from passing Tk scaling emulation or existing files.
+
+Full commands, environment, changed scope, traceability, prior corrected failures,
+Ruff/manual review, exclusions and remaining gate checklist are recorded in
+[M13–M17 verification](M13_M17_VERIFICATION.md). The explicit 31-file allowlist
+passes **457 tests in 37.25 seconds** without skips/failures. All 14 changed Python
+files pass Ruff and manual readability/privacy/architecture review; repository
+findings are recorded separately. Failure, cancellation and cleanup tests pass.
+No downloads, real inference, live synthesis, listening/comparison, benchmarks,
+M11 rerun, package rebuild, dependency install, commit, push or release.
+M10's historical BLOCKED status is unchanged.

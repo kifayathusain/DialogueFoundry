@@ -47,3 +47,25 @@ Verify the complete JSON workflow and publish accurate setup/usage/evidence docu
 - Final report lists implementation outcome, exact verification scope/results, excluded checks, existing issues and any remaining feature limitations.
 
 Do not extend M17 into deferred features, a quality campaign, model installation, signing or release work. If a required tool/environment check is unavailable, preserve the implemented work and record the specific unresolved gate.
+
+
+## Implementation and gate evidence — 2026-10-26
+
+Status: **BLOCKED** on M15/M16 completion gates. The full safe sample scenario,
+compatibility checks, exact silence/export proof, project/reopen/CLI parity,
+cancellation and documentation review are implemented and tested. A concrete
+Windows atomic metadata sharing defect discovered in regression work has a short
+bounded retry with transient/permanent failure tests. Typed metadata includes
+assignment/request hashes and no dialogue/note bodies. Actual 150%/200% OS scaling
+and corresponding keyboard review remain unverified; no clean-machine or
+real-provider quality pass is inferred.
+
+Full commands, environment, changed scope, traceability, prior corrected failures,
+Ruff/manual review, exclusions and remaining gate checklist are recorded in
+[M13–M17 verification](M13_M17_VERIFICATION.md). The explicit 31-file allowlist
+passes **457 tests in 37.25 seconds** without skips/failures. All 14 changed Python
+files pass Ruff and manual readability/privacy/architecture review; repository
+findings are recorded separately. Failure, cancellation and cleanup tests pass.
+No downloads, real inference, live synthesis, listening/comparison, benchmarks,
+M11 rerun, package rebuild, dependency install, commit, push or release.
+M10's historical BLOCKED status is unchanged.

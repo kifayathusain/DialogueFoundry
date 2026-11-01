@@ -223,3 +223,22 @@ remain NOT_STARTED and must proceed sequentially when requested.
 | M16 | Saved Projects, Presets and JSON CLI | M15 | [Persistence and additive CLI input](M16_PROJECTS_PRESETS_CLI.md) |
 | M17 | Integrated Acceptance and Documentation | M16 | [Integrated safe acceptance](M17_INTEGRATED_ACCEPTANCE.md) |
 
+
+
+## Current M13–M17 authorization and outcome — 2026-10-26
+
+The user's new request supersedes the earlier M12-only session boundary above
+and explicitly authorizes M13–M17 sequential implementation. M12's completed
+implementation/evidence was the starting point. M13 passed before M14; M14 passed
+before M15. M15 now has implemented structured UI behavior and safe Windows
+acceptance at the reported 100% scale, but required actual 150%/200% OS scale
+checks could not run (Windows Settings app approval timed out; no display changes).
+
+Under the explicit instruction to continue independent authorized work when
+blocked, project/preset persistence, JSON CLI, snapshot integration, compatibility
+verification and documentation were implemented and tested. Their dependent
+completion gates are not bypassed: M15, M16 and M17 remain BLOCKED. M13 and M14
+are DONE. See [current verification](M13_M17_VERIFICATION.md) and
+[the tracker](MILESTONE_TRACKER.md). Historical M10 remains BLOCKED; no downloads,
+live synthesis, listening, benchmarking, M11 rerun, package rebuild or release
+was performed. No mixed-provider orchestration or deferred feature was added.

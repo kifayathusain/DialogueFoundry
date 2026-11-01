@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import tempfile
+import time
 import uuid
 import wave
 from collections.abc import Callable
@@ -24,6 +25,7 @@ from .audio_export import (
 from .audio_files import write_silence
 from .parser import ConversationLine
 from .providers.base import CancellationToken, SynthesisRequest, TTSProvider
+from .speaker_mapping import ResolvedSegment
 from .text_processing import (
     SpeechChunk,
     TextProcessingSettings,
@@ -50,6 +52,31 @@ class ChunkRecord:
     output_filename: str
     state: Literal["pending", "running", "done", "failed", "cancelled"] = "pending"
     audio_sha256: str | None = None
+    speed: float | None = None
+
+
+@dataclass
+class TimelineItem:
+    """Ordered planned speech/silence with materialization state."""
+
+    kind: str
+    segment_index: int
+    chunk_index: int
+    seconds: float = 0
+    state: str = "pending"
+
+
+@dataclass(frozen=True)
+class ResolvedSegmentMetadata:
+    """Public effective settings without private dialogue or note bodies."""
+
+    index: int
+    speaker_id: str
+    voice_id: str
+    speed: float | None
+    speed_source: str
+    pause_after_seconds: float
+    direction_status: str
 
 
 @dataclass
@@ -64,6 +91,11 @@ class GenerationRecord:
     export_settings: ExportSettings | None
     chunks: list[ChunkRecord]
     state: Literal["running", "done", "failed", "cancelled"] = "running"
+    document_id: str | None = None
+    document_revision: int | None = None
+    timeline: list[TimelineItem] | None = None
+    segments: list[ResolvedSegmentMetadata] | None = None
+    assignment_sha256: str | None = None
 
 
 def _text_digest(text: str) -> str:
@@ -85,7 +117,16 @@ def _write_record(record: GenerationRecord, destination: Path) -> None:
     temporary = Path(name)
     try:
         temporary.write_text(json.dumps(asdict(record), indent=2), encoding="utf-8")
-        os.replace(temporary, destination)
+        for delay in (0.01, 0.03, 0.1, None):
+            try:
+                os.replace(temporary, destination)
+                break
+            except PermissionError as error:
+                # Windows scanners can briefly hold the previous metadata open.
+                # Permanent permissions and exhausted retries remain failures.
+                if error.winerror not in {5, 32, 33} or delay is None:
+                    raise
+                time.sleep(delay)
     finally:
         temporary.unlink(missing_ok=True)
 
@@ -177,6 +218,8 @@ async def generate_processed_conversation(
     speed: float | None = None,
     export_settings: ExportSettings | None = None,
     on_export_progress: ExportProgressCallback | None = None,
+    resolved_segments: tuple[ResolvedSegment, ...] | None = None,
+    document_hash: str | None = None,
 ) -> Path:
     """Generate an isolated, tracked job with complete ordered lossless chunks."""
     token = cancellation_token or CancellationToken()
@@ -188,16 +231,79 @@ async def generate_processed_conversation(
         validate_export_target(final_audio, export_settings)
     elif final_audio.suffix.lower() not in {".mp3", ".wav"}:
         raise ValueError("Processed audio currently supports MP3 or WAV output.")
+    effective_speeds = {item.index: item.speed for item in resolved_segments or ()}
     for chunk in chunks:
         provider.validate_configuration(
             SynthesisRequest(
-                chunk.text, chunk.voice_id, audio_format=native_format, speed=speed
+                chunk.text,
+                chunk.voice_id,
+                audio_format=native_format,
+                speed=effective_speeds.get(chunk.dialogue_index, speed),
             )
         )
     output_dir.mkdir(parents=True, exist_ok=True)
     job_directory = output_dir / f"job-{uuid.uuid4().hex}"
     job_directory.mkdir()
     record = _initial_record(lines, provider, settings, chunks, speed, export_settings)
+    if resolved_segments is not None:
+        record.schema_version = 2
+        record.document_id = resolved_segments[0].document_id
+        record.document_revision = resolved_segments[0].revision
+        record.segments = [
+            ResolvedSegmentMetadata(
+                item.index,
+                item.speaker_id,
+                item.voice_id,
+                item.speed,
+                item.speed_source,
+                item.pause_after_seconds,
+                item.direction_status,
+            )
+            for item in resolved_segments
+        ]
+        record.assignment_sha256 = _text_digest(
+            json.dumps(
+                {item.speaker_id: item.voice_id for item in resolved_segments},
+                sort_keys=True,
+            )
+        )
+        record.request_sha256 = _text_digest(
+            json.dumps(
+                {
+                    "base": record.request_sha256,
+                    "document_hash": document_hash,
+                    "segments": [asdict(item) for item in record.segments],
+                },
+                sort_keys=True,
+            )
+        )
+        record.timeline = []
+        for offset, chunk in enumerate(chunks):
+            record.chunks[offset].speed = effective_speeds[chunk.dialogue_index]
+            if chunk.pause_before_seconds:
+                record.timeline.append(
+                    TimelineItem(
+                        "sentence_pause",
+                        chunk.dialogue_index,
+                        chunk.index,
+                        chunk.pause_before_seconds,
+                    )
+                )
+            record.timeline.append(
+                TimelineItem("speech", chunk.dialogue_index, chunk.index)
+            )
+            if (
+                offset + 1 == len(chunks)
+                or chunks[offset + 1].dialogue_index != chunk.dialogue_index
+            ):
+                record.timeline.append(
+                    TimelineItem(
+                        "after_pause",
+                        chunk.dialogue_index,
+                        chunk.index,
+                        resolved_segments[chunk.dialogue_index - 1].pause_after_seconds,
+                    )
+                )
     metadata_file = job_directory / "generation.json"
     _write_record(record, metadata_file)
     audio_files: list[Path] = []
@@ -209,13 +315,23 @@ async def generate_processed_conversation(
             _write_record(record, metadata_file)
             output = job_directory / item.output_filename
             await _synthesize_chunk(
-                chunk, provider, native_format, output, token, speed
+                chunk,
+                provider,
+                native_format,
+                output,
+                token,
+                effective_speeds.get(chunk.dialogue_index, speed),
             )
             if chunk.pause_before_seconds > 0 and audio_files:
                 with wave.open(str(output)) as audio:
                     sample_rate = audio.getframerate()
                 silence = job_directory / f"pause_{chunk.index:05d}.wav"
-                write_silence(silence, sample_rate, chunk.pause_before_seconds, token)
+                await run_blocking_work(
+                    partial(
+                        write_silence, silence, sample_rate, chunk.pause_before_seconds
+                    ),
+                    token,
+                )
                 audio_files.append(silence)
             audio_files.append(output)
             item.audio_sha256 = _file_digest(output)
@@ -227,6 +343,31 @@ async def generate_processed_conversation(
                 offset + 1 == len(chunks)
                 or chunks[offset + 1].dialogue_index != chunk.dialogue_index
             )
+            if resolved_segments is not None:
+                for planned in record.timeline or ():
+                    if (
+                        planned.chunk_index == chunk.index
+                        and planned.kind != "after_pause"
+                    ):
+                        planned.state = "done"
+                if last_for_line:
+                    seconds = resolved_segments[
+                        chunk.dialogue_index - 1
+                    ].pause_after_seconds
+                    with wave.open(str(output)) as audio:
+                        rate = audio.getframerate()
+                    if round(rate * seconds) > 0:
+                        silence = (
+                            job_directory / f"after_{chunk.dialogue_index:05d}.wav"
+                        )
+                        await run_blocking_work(
+                            partial(write_silence, silence, rate, seconds), token
+                        )
+                        audio_files.append(silence)
+                for planned in record.timeline or ():
+                    if planned.chunk_index == chunk.index:
+                        planned.state = "done"
+                _write_record(record, metadata_file)
             if last_for_line and on_progress is not None:
                 line = lines[chunk.dialogue_index - 1]
                 on_progress(line.index, len(lines), line)
@@ -261,6 +402,9 @@ async def generate_processed_conversation(
     except asyncio.CancelledError:
         token.cancel()
         record.state = "cancelled"
+        for planned in record.timeline or ():
+            if planned.state != "done":
+                planned.state = "cancelled"
         for item in record.chunks:
             if item.state == "running":
                 item.state = "cancelled"
@@ -268,6 +412,9 @@ async def generate_processed_conversation(
     except Exception:
         # A provider failure must remain visible while the job records its state.
         record.state = "failed"
+        for planned in record.timeline or ():
+            if planned.state != "done":
+                planned.state = "failed"
         for item in record.chunks:
             if item.state == "running":
                 item.state = "failed"

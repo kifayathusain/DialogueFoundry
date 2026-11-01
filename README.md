@@ -1,8 +1,8 @@
 # Windows TTS App
 
-Generates a two-voice conversation audio file from a plain-text script using
-Microsoft Edge TTS, then combines the per-line audio segments into a single
-file with FFmpeg. The desktop application is named **Windows TTS App**; its
+Generates conversations from plain-text scripts or structured JSON with editable
+role-to-voice mappings and exact segment after-pauses. Choose Microsoft Edge TTS
+or installed CPU-only Piper/Kokoro voices, then export WAV, MP3 or M4A with FFmpeg. The desktop application is named **Windows TTS App**; its
 version is shown in the window title and is maintained as `APP_VERSION` in
 `ttsapp/config.py`.
 
@@ -31,27 +31,39 @@ python -m venv .venv
 .\.venv\Scripts\python.exe app.py
 ```
 
-This opens a desktop window where you can:
+Use **Plain text** for the familiar `Speaker: text` editor and configured
+Receptionist/Caller defaults. Choose one provider per job. **Open / Import** uses
+the extension to open plain text or validated JSON; invalid JSON never falls back
+to text. **JSON** shows every declared role, ordered segments and preflight
+diagnostics. Select a role or segment, edit its fields, then use **Apply role** or
+**Apply segment**. Unsupported explicit settings block generation.
 
-1. Enter or paste a conversation script, formatted as `Speaker: text` (one
-   line of dialogue per line, matching `conversation.txt`'s format). Blank
-   lines are ignored.
-2. Edit the names and Edge TTS voices for Speaker 1 and Speaker 2. Each name
-   must exactly match the corresponding label before `:` in the script; the
-   default names and voices are pre-filled from `ttsapp/config.py`'s `VOICES`.
-3. Choose where the combined output MP3 should be saved ("Browse...").
-4. Click "Generate". The window stays responsive while Edge TTS/FFmpeg run
-   in the background; progress is shown per line, and a success or error
-   message is shown when done.
+**JSON Save As** exports source dialogue/settings/extensions. **Save project As**
+also preserves active voice mappings, provider/locale and processing/export
+settings. **Open project** restores its embedded snapshot even if the original
+source moved. **Apply preset** explicitly enables exact role/provider/locale
+preferences for automatic roles while preserving manual/project selections.
+Directions are visible notes; they do not enforce emotion or style. Edge does not
+support explicit speed. Repeated voice IDs produce shared-voice warnings.
 
-The desktop UI is built with Tkinter (bundled with Python), so no extra
-dependency is required to run it.
-By default, the final MP3 is saved to
-`%USERPROFILE%\Documents\Windows TTS App\conversation.mp3`; the generated
-line segments are kept in the adjacent `audio_parts` folder. Choose another
-output path with "Browse..." if preferred. Existing final audio is replaced
-only after a new file has been generated successfully. Temporary files are
-removed automatically; only segments from the current script are combined.
+Preview uses selected-role dialogue and effective supported speed, with an explicit
+**speech only** label. Generate, Cancel, Play/Replay, Stop, model-library access,
+output browsing and overwrite confirmation remain available. **Advanced export
+options** exposes codec, bitrate, sample rate, channels and normalization. The
+editing surface scrolls at small sizes and keyboard focus reveals off-screen
+fields. See the [structured desktop guide](docs/setup/STRUCTURED_DESKTOP.md).
+
+The default desktop output is
+`%USERPROFILE%\Documents\Windows TTS App\conversation.mp3`; isolated job
+parts are retained in adjacent `audio_parts`. Existing final audio is published
+atomically only after successful validation. Model verification, import, synthesis
+and FFmpeg work use background workers; no import automatically downloads models
+or previews voices. Tkinter remains the desktop framework.
+
+Current acceptance: M13/M14 pass the approved offline/fake-provider gates.
+M15–M17 remain blocked on required 150%/200% Windows OS scaling evidence; the
+tested development display reports 100%. M10's separate clean-machine blocker
+is unchanged. See the [tracker](docs/milestones/MILESTONE_TRACKER.md).
 
 ### Build a distributable Windows app
 
@@ -102,6 +114,19 @@ for build profiles, diagnostics, licensing status and the required clean Windows
    This generates one MP3 per line in `audio_parts/` and combines them into
    `conversation.mp3` in the repository root.
 
+Additive JSON CLI usage:
+
+```powershell
+python main.py --input docs/tts-sample.json --input-format json --provider edge --output dialogue.wav
+python main.py --input dialogue.json --voice-map voices.json --output dialogue.m4a --overwrite
+```
+
+Mappings, speed validation, exact after-pauses and exports use the same service as
+the desktop. New explicit CLI exports refuse replacement without `--overwrite`.
+See [projects, presets and CLI contracts](docs/PROJECTS_AND_CLI.md). The commands
+above perform synthesis when a user runs them; acceptance for this follow-up used
+only injected fake providers and synthetic non-speech media.
+
 If generation is interrupted after the per-line audio files already exist,
 you can re-run just the combination step:
 
@@ -111,49 +136,15 @@ you can re-run just the combination step:
 
 ## Architecture
 
-The application is split into a thin CLI entry point / desktop UI and a
-reusable application/service layer, so neither duplicates the pipeline
-logic:
-
-```text
-main.py / gen_audio.py        (CLI entry points)
-app.py -> ttsapp/gui.py       (Tkinter desktop UI, M02)
-         |
-         v
-ttsapp/service.py             (application/service layer: orchestrates the pipeline)
-         |
-         +--> ttsapp/parser.py         (parses "Speaker: text" script lines)
-         +--> ttsapp/tts_engine.py     (Microsoft Edge TTS adapter)
-         +--> ttsapp/audio_combiner.py (FFmpeg adapter)
-         |
-         v
-filesystem/output (audio_parts/*.mp3, conversation.mp3)
-```
-
-- `ttsapp/config.py` holds shared defaults (voices, file paths).
-- `ttsapp/service.py` exposes `generate_conversation(...)`, the single
-  function a UI or CLI needs to call to run the full pipeline, with an
-  optional progress callback. It accepts either `input_file` (CLI) or
-  `input_text` (desktop UI) as the conversation script source.
-- `ttsapp/tts_engine.py` validates non-empty text and voice selection, sends
-  Unicode text and the selected voice to Edge TTS, and writes each segment
-  through a temporary file before atomically replacing its destination. A
-  failed or cancelled synthesis therefore cannot leave a partial segment in
-  place; Edge TTS failures are reported with their underlying reason.
-- `ttsapp/audio_combiner.py` combines segments in their parsed order using
-  FFmpeg's concat demuxer. It uses temporary manifest/output files, atomically
-  replaces the final audio only after successful combination, preserves any
-  existing final file on failure, and reports missing FFmpeg or its error
-  output clearly.
-- `ttsapp/gui.py` implements the desktop window. It runs generation on a
-  background thread (with its own asyncio event loop) and posts progress
-  back to the UI thread through a queue, so the window never freezes while
-  Edge TTS/FFmpeg are working. The validation/merging helpers
-  (`validate_script_text`, `build_voice_overrides`) are plain functions kept
-  separate from the Tkinter widgets so they're unit-testable without a
-  display. The desktop default output goes into the user's Documents folder,
-  not the current working directory, and common service failures include
-  recovery guidance.
+The CLI and Tkinter views share `ttsapp/service.py`. Legacy text uses
+`parser.py`; structured input uses `conversation_document.py` and the pure
+`speaker_mapping.py` resolver. Processed generation in `generation.py` retains
+source spans, effective per-segment speed and ordered speech/silence metadata.
+Provider implementations remain behind their common interface, with verified
+model lifecycle separate from audio processing and UI state. `audio_export.py`
+owns validated codecs/layout preparation and atomic publication.
+`project_storage.py` handles bounded data-only snapshots and presets.
+See the [current architecture](docs/architecture/ARCHITECTURE.md).
 
 ## Audio exports
 
@@ -176,7 +167,7 @@ Microsoft Edge TTS remains the default, with the original CLI and desktop
 behavior. The typed provider contract and cancellation boundaries are documented
 in [the provider contract](docs/architecture/PROVIDER_CONTRACT.md).
 Local model runtimes are optional and are not imported by default Edge routing.
-The optional [Piper CPU provider](docs/setup/PIPER.md) is available through the
+The optional [Piper CPU provider](docs/setup/PIPER.md) is available through the desktop, JSON CLI and
 Python API with explicitly verified local voices. The [Kokoro-82M CPU provider](docs/setup/KOKORO.md) is available on Python
 3.10–3.13. The desktop now includes provider selection, local voice previews, replay/stop,
 progress, and cancellation; see [desktop controls](docs/setup/DESKTOP_PREVIEW.md). See the

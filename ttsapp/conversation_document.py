@@ -143,7 +143,7 @@ def _child(path: str, key: str) -> str:
     return f"{path}[{json.dumps(key, ensure_ascii=True)}]"
 
 
-def _check_text_depth(text: str) -> None:
+def _check_text_depth(text: str, limit: int = MAX_CONTAINER_DEPTH) -> None:
     """Scan JSON containers before decoding; braces in strings are not nesting."""
     depth = 0
     in_string = False
@@ -160,8 +160,8 @@ def _check_text_depth(text: str) -> None:
             in_string = True
         elif character in "[{":
             depth += 1
-            if depth > MAX_CONTAINER_DEPTH:
-                raise _invalid("depth_limit", "JSON container depth exceeds 64.")
+            if depth > limit:
+                raise _invalid("depth_limit", f"JSON container depth exceeds {limit}.")
         elif character in "]}":
             depth -= 1
 
@@ -244,14 +244,37 @@ def parse_document_text(
     source: str | bytes, *, reload_of: ConversationDocument | None = None
 ) -> ConversationDocument:
     """Parse UTF-8 JSON (with optional BOM) without inference or network access."""
+    data, issues, text = _decode_json(source, MAX_INPUT_BYTES)
+    return _validate_document(data, issues, reload_of, text)
+
+
+def decode_json_value(
+    source: str | bytes,
+    *,
+    max_bytes: int = MAX_INPUT_BYTES,
+    max_depth: int = MAX_CONTAINER_DEPTH,
+) -> object:
+    """Decode bounded data-only JSON with duplicate/depth/nonfinite protection."""
+    data, issues, _ = _decode_json(source, max_bytes, max_depth)
+    issues.raise_errors()
+    return data
+
+
+def _decode_json(
+    source: str | bytes,
+    max_bytes: int,
+    max_depth: int = MAX_CONTAINER_DEPTH,
+) -> tuple[object, _Diagnostics, str]:
     try:
         raw = source.encode("utf-8") if isinstance(source, str) else source
-        if len(raw) > MAX_INPUT_BYTES:
-            raise _invalid("size_limit", "JSON input exceeds 10 MiB.")
+        if len(raw) > max_bytes:
+            raise _invalid(
+                "size_limit", f"JSON input exceeds {max_bytes // (1024 * 1024)} MiB."
+            )
         text = raw.decode("utf-8-sig")
     except UnicodeError as error:
         raise _invalid("invalid_encoding", "Input must be valid UTF-8.") from error
-    _check_text_depth(text)
+    _check_text_depth(text, max_depth)
     try:
         pairs = json.loads(text, object_pairs_hook=_ObjectPairs)
     except json.JSONDecodeError as error:
@@ -267,7 +290,7 @@ def parse_document_text(
         raise _invalid("invalid_number", "JSON number cannot be decoded.") from error
     issues = _Diagnostics()
     data = _convert_json(pairs, "$", issues)
-    return _validate_document(data, issues, reload_of, text)
+    return data, issues, text
 
 
 def load_document(
