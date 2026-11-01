@@ -10,12 +10,13 @@ import time
 import uuid
 import wave
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from functools import partial
 from pathlib import Path
 from typing import Literal
 
 from . import audio_combiner
+from .audio_effects import AudioTreatment, apply_treatment
 from .audio_export import (
     ExportProgressCallback,
     ExportSettings,
@@ -96,6 +97,7 @@ class GenerationRecord:
     timeline: list[TimelineItem] | None = None
     segments: list[ResolvedSegmentMetadata] | None = None
     assignment_sha256: str | None = None
+    treatments: dict[int, AudioTreatment] | None = None
 
 
 def _text_digest(text: str) -> str:
@@ -220,6 +222,7 @@ async def generate_processed_conversation(
     on_export_progress: ExportProgressCallback | None = None,
     resolved_segments: tuple[ResolvedSegment, ...] | None = None,
     document_hash: str | None = None,
+    segment_treatments: dict[int, AudioTreatment] | None = None,
 ) -> Path:
     """Generate an isolated, tracked job with complete ordered lossless chunks."""
     token = cancellation_token or CancellationToken()
@@ -232,6 +235,15 @@ async def generate_processed_conversation(
     elif final_audio.suffix.lower() not in {".mp3", ".wav"}:
         raise ValueError("Processed audio currently supports MP3 or WAV output.")
     effective_speeds = {item.index: item.speed for item in resolved_segments or ()}
+    if segment_treatments is not None:
+        valid_indices = {item.index for item in resolved_segments or ()}
+        if any(
+            type(index) is not int
+            or index not in valid_indices
+            or not isinstance(value, AudioTreatment)
+            for index, value in segment_treatments.items()
+        ):
+            raise ValueError("Treatments must reference known structured segments.")
     for chunk in chunks:
         provider.validate_configuration(
             SynthesisRequest(
@@ -245,6 +257,7 @@ async def generate_processed_conversation(
     job_directory = output_dir / f"job-{uuid.uuid4().hex}"
     job_directory.mkdir()
     record = _initial_record(lines, provider, settings, chunks, speed, export_settings)
+    record.treatments = segment_treatments
     if resolved_segments is not None:
         record.schema_version = 2
         record.document_id = resolved_segments[0].document_id
@@ -273,6 +286,10 @@ async def generate_processed_conversation(
                     "base": record.request_sha256,
                     "document_hash": document_hash,
                     "segments": [asdict(item) for item in record.segments],
+                    "treatments": {
+                        index: asdict(value)
+                        for index, value in (segment_treatments or {}).items()
+                    },
                 },
                 sort_keys=True,
             )
@@ -322,6 +339,26 @@ async def generate_processed_conversation(
                 token,
                 effective_speeds.get(chunk.dialogue_index, speed),
             )
+            treatment = (segment_treatments or {}).get(chunk.dialogue_index)
+            if treatment is not None:
+                # Incidental cues occur once per turn, even for chunked speech.
+                first_chunk = (
+                    offset == 0
+                    or chunks[offset - 1].dialogue_index != chunk.dialogue_index
+                )
+                if not first_chunk:
+                    treatment = replace(treatment, cue=None)
+                processed = await run_blocking_work(
+                    partial(
+                        apply_treatment,
+                        output,
+                        output.with_name(f"treated_{output.name}"),
+                        treatment,
+                    ),
+                    token,
+                )
+                if processed != output:
+                    os.replace(processed, output)
             if chunk.pause_before_seconds > 0 and audio_files:
                 with wave.open(str(output)) as audio:
                     sample_rate = audio.getframerate()

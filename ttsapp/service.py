@@ -9,6 +9,7 @@ from functools import partial
 from pathlib import Path
 
 from . import audio_combiner, tts_engine
+from .audio_effects import AudioTreatment
 from .audio_export import (
     ExportProgressCallback,
     ExportSettings,
@@ -47,6 +48,7 @@ async def generate_conversation(
     on_export_progress: ExportProgressCallback | None = None,
     document: ConversationDocument | None = None,
     voice_assignments: dict[str, str] | None = None,
+    segment_treatments: dict[int, AudioTreatment] | None = None,
 ) -> Path:
     """Run the full pipeline: parse -> synthesize each line -> combine audio.
 
@@ -66,6 +68,8 @@ async def generate_conversation(
         validate_export_target(final_audio, export_settings)
 
     resolved_segments = None
+    if segment_treatments is not None and document is None:
+        raise ValueError("Segment treatments require a structured document.")
     if document is not None:
         if input_text is not None or input_file != DEFAULT_INPUT_FILE:
             raise ValueError(
@@ -127,6 +131,7 @@ async def generate_conversation(
             on_export_progress=on_export_progress,
             resolved_segments=resolved_segments,
             document_hash=document.content_hash if document is not None else None,
+            segment_treatments=segment_treatments,
         )
     for line in lines:
         selected_provider.validate_configuration(

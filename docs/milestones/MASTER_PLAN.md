@@ -1,5 +1,13 @@
 # TTS Milestone Master Plan
 
+## Authorized Audio Director follow-up — 2026-11-01
+
+The user requests sequential M18–M21 implementation, including actual local LLM,
+local synthesis and Windows acceptance where prerequisites are available.
+This supersedes older session-specific testing boundaries for this new work.
+See [scope and gates](M18_M21_AUDIO_DIRECTOR.md). Existing statuses and outstanding
+M10/M15–M17 acceptance remain unchanged; independent follow-up work may proceed.
+
 ## Authority and scope
 
 Start every Codex session with [AGENTS.md](../../AGENTS.md). Follow the

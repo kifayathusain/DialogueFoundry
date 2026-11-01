@@ -35,6 +35,10 @@ established status on later edits and record compliance evidence separately.
 | M15 | Responsive Multi-Speaker Windows GUI | BLOCKED | Native fake-provider UI passes at 100%; required 150%/200% OS scaling evidence missing; [scope](M15_RESPONSIVE_GUI.md) |
 | M16 | Saved Projects, Presets and JSON CLI | BLOCKED | Implemented/tested; M15 dependency gate remains open; [scope](M16_PROJECTS_PRESETS_CLI.md) |
 | M17 | Integrated Acceptance and Documentation | BLOCKED | Integrated safe checks/docs pass; M15/M16 completion gates remain open; [scope](M17_INTEGRATED_ACCEPTANCE.md) |
+| M18 | Audio Director Batch Foundation | BLOCKED | Implemented/tested; actual 150%/200% Windows usability gate remains open; [evidence](M18_M21_AUDIO_DIRECTOR.md) |
+| M19 | Audio Director AI Direction | BLOCKED | Implemented/protocol tested; configured real LLM run unavailable; [evidence](M18_M21_AUDIO_DIRECTOR.md) |
+| M20 | Audio Director Natural Audio | BLOCKED | Real local Kokoro/media checks pass; human listening judgment pending; [evidence](M18_M21_AUDIO_DIRECTOR.md) |
+| M21 | Audio Director Integrated Acceptance | BLOCKED | Full suite passes; actual LLM/listening/150%/200% QA gates remain open; [evidence](M18_M21_AUDIO_DIRECTOR.md) |
 
 “Pending” means the milestone has not been reviewed against the new gate. The
 standards/configuration update does not complete or reopen an application
@@ -66,6 +70,28 @@ reason when a milestone fails its completion gate. Do not turn a historical
 DONE into a new compliance pass without evidence.
 
 ## Evidence entries
+
+### Audio Director implementation and acceptance — 2026-11-01
+
+M18–M21 are implemented as an independent follow-up in stage order, with shared
+Tk-independent plans/runner, manual batches, an actual configurable LLM adapter,
+validated data-only decisions and common audio processing. No historical status
+has changed. Missing real LLM, human listening and OS scaling evidence keeps the
+new milestones BLOCKED; implemented files are not a completion waiver.
+
+[Full commands, results, traceability and prerequisites](M18_M21_AUDIO_DIRECTOR.md).
+The complete suite passed **506 tests, 11 opt-in skips in 93.80 seconds**. All 14
+changed Python files pass relevant Ruff and Python 3.10 syntax parsing; the
+existing I001 in `tests/test_parser.py` and four untouched format differences
+remain separate. Real British Kokoro generated three valid MP3 lessons, preserved
+an output conflict, reported the malformed source, and produced a scoped phone
+audition. The full phone export decodes to 18.951625 seconds at 24 kHz; its final
+1.8 seconds have exactly zero PCM magnitude. Listening approval remains pending.
+No model download, package rebuild, exhaustive voice campaign, commit or push.
+Final post-review checks pass **39 Director/service**, **18 legacy Windows UI**
+and **21 planner** cases in separate processes. The full-suite total predates
+four added invalid-endpoint cases; exact commands and the embedded Tcl/Tk
+combined-process limitation are recorded in the linked evidence.
 
 ### M12–M17 authorization and registration — 2026-10-26
 

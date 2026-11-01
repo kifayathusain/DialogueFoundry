@@ -1,0 +1,7 @@
+{
+  "speakers": [{"id": "narrator", "role": "Narrator", "voice_defaults": {"kokoro": "bf_emma"}}],
+  "segments": [
+    {"speaker": "narrator", "text": "Welcome to our listening lesson.", "pause_after_seconds": 0},
+    {"speaker": "narrator", "text": "Listen carefully to each exchange.", "pause_after_seconds": 1}
+  ]
+}

@@ -28,6 +28,12 @@ and the final segment's pause. Structured generation renders these as exact PCM 
 including the final after-pause, using round(sample_rate × seconds) frames. Existing five-second sentence/paragraph settings
 are separate and unchanged.
 
+Audio Director adds an opt-in natural-timing plan setting without changing this
+version-one contract. It inspects the retained source tree: omission permits a
+bounded automatic gap at a nonfinal speaker change; an explicit zero forbids one.
+Explicit positive and final pauses remain exact. Plain structured rendering still
+defaults omitted pauses to zero. See [Audio Director](setup/AUDIO_DIRECTOR.md).
+
 Limits are centralized in the document module:
 
 | Limit | Value |

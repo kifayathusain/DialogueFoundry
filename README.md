@@ -206,3 +206,9 @@ checks in [Windows package setup](docs/setup/WINDOWS_PACKAGE.md). An isolated
 folder on the development host is useful validation but does not establish a
 clean Windows 11 installation. The [tracker](docs/milestones/MILESTONE_TRACKER.md)
 records which completion gates have actually passed.
+## Audio Director
+
+Launch `python app.py`, then choose **Audio Director…** for folder-based manual or
+AI-directed conversation batches, multi-turn audition, scoped phone treatment
+and validated MP3/WAV/M4A exports. See the [setup and worked Lessons walkthrough](docs/setup/AUDIO_DIRECTOR.md)
+and [acceptance evidence / outstanding prerequisites](docs/milestones/M18_M21_AUDIO_DIRECTOR.md).

@@ -39,6 +39,7 @@ from .desktop_options import (
     build_export_settings,
     filter_voice_choices,
 )
+from .director_gui import AudioDirectorWindow
 from .model_library import ModelLibraryWindow
 from .parser import ConversationLine
 from .preview import PreviewService, WindowsAudioPlayer, strip_speaker_labels
@@ -271,6 +272,9 @@ class TTSDesktopApp(tk.Tk):
     def _build_text_editor(self) -> None:
         file_bar = ttk.Frame(self._content)
         file_bar.pack(fill="x", padx=10, pady=4)
+        ttk.Button(file_bar, text="Audio Director…", command=self._open_director).pack(
+            side="left", padx=4
+        )
         ttk.Button(
             file_bar, text="Open / Import", command=self._open_conversation
         ).pack(side="left")
@@ -762,6 +766,16 @@ class TTSDesktopApp(tk.Tk):
             self._model_library.bind("<Destroy>", self._library_closed, add="+")
         else:
             self._model_library.lift()
+
+    def _open_director(self) -> None:
+        if self._worker is not None and self._worker.is_alive():
+            self._status_var.set("Finish or cancel the current operation first.")
+            return
+        existing = getattr(self, "_director", None)
+        if existing is not None and existing.winfo_exists():
+            existing.lift()
+            return
+        self._director = AudioDirectorWindow(self)
 
     def _library_closed(self, event: tk.Event) -> None:
         """Refresh asset presence after the library's worker has finished cleanup."""
@@ -1399,6 +1413,10 @@ class TTSDesktopApp(tk.Tk):
             self._elapsed_var.set(
                 f"Elapsed: {time.monotonic() - self._started_at:.1f} s"
             )
+        director = getattr(self, "_director", None)
+        if self._closing and director is not None and director.winfo_exists():
+            self.after(self.POLL_INTERVAL_MS, self._drain_queue)
+            return
         if self._closing and (self._worker is None or not self._worker.is_alive()):
             if not self._shutdown_started:
                 self._shutdown_started = True
@@ -1519,6 +1537,9 @@ class TTSDesktopApp(tk.Tk):
         self._cancellation_token.cancel()
         self._player.stop()
         self._status_var.set("Waiting for cleanup before closing...")
+        director = getattr(self, "_director", None)
+        if director is not None and director.winfo_exists():
+            director.close()
 
 
 def main() -> None:

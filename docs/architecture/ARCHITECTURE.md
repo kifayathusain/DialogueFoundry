@@ -1,5 +1,32 @@
 # Current Incremental Architecture
 
+## Audio Director follow-up
+
+`gui.py` opens `director_gui.AudioDirectorWindow`, a worker/event-based workspace
+with an independent ProviderManager lifetime and the existing model library and
+Windows player. `director.py` owns immutable batch/file snapshots, bounded stable
+folder discovery, source fingerprints, explicit cast linking, manual corrections,
+timing resolution, scene scopes and whole-batch destination preflight.
+`director_planner.py` owns the configurable OpenAI-compatible JSON-mode adapter,
+metadata-first inventory, explicit cloud consent, data-only version-one response
+validation and retained manual/document precedence. It has no filesystem or tool
+operations in its plan contract. Presets/reports use existing bounded atomic JSON
+storage. Original conversation words and speaker order remain authoritative.
+
+`director_runner.py` provides widget-free per-file execution, failure policy,
+cancellation, selected retries and multi-turn auditions. It delegates to
+`service.generate_conversation` and the existing processed-generation/export
+pipeline. Optional typed `segment_treatments` are validated before side effects,
+included in request metadata/hash, and applied to speech PCM through
+`audio_effects.py` before combining. Providers contain no FFmpeg/scene logic.
+Scripted silence bypasses effects; deterministic natural gaps apply only to
+omitted nonfinal inter-speaker pauses in the immutable source snapshot. All final
+outputs retain existing validated atomic publication and cancellation behavior.
+Private intermediate jobs are cleaned per Director file; reports omit dialogue,
+prompts, credentials and raw model/provider responses. See the
+[user guide](../setup/AUDIO_DIRECTOR.md) and
+[acceptance evidence](../milestones/M18_M21_AUDIO_DIRECTOR.md).
+
 For the original pre-migration snapshot see [CURRENT_STATE.md](CURRENT_STATE.md).
 The existing `ttsapp` package and Tkinter framework are retained.
 
