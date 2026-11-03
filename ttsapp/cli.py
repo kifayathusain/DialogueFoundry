@@ -110,6 +110,11 @@ def _print_progress(index: int, total: int, line: ConversationLine) -> None:
 
 def run_cli(argv: list[str] | None = None) -> int:
     """Return actionable errors without dumping private dialogue or tracebacks."""
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["director"]:
+        from .director_cli import run_cli as run_director
+
+        return run_director(argv[1:])
     arguments = argument_parser().parse_args(argv)
     try:
         result = asyncio.run(generate_from_arguments(arguments))

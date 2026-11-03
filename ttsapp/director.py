@@ -22,6 +22,7 @@ from .conversation_document import (
     ConversationDocument,
     parse_document_text,
 )
+from .director_cast import match_cast
 from .provider_manager import ProviderChoice
 from .providers.base import CancellationToken
 from .speaker_mapping import resolve_document
@@ -124,6 +125,12 @@ class FilePlan:
     skipped: bool = False
     manual_fields: frozenset[str] = frozenset()
     issues: tuple[str, ...] = ()
+    manual_cast: frozenset[str] = frozenset()
+    ai_cast: bool = False
+    speaker_speeds: tuple[tuple[str, float], ...] = ()
+    turn_speeds: tuple[tuple[int, float], ...] = ()
+    turn_pauses: tuple[tuple[int, float], ...] = ()
+    sentence_pause_seconds: float = 0
     resolved_after_pauses: tuple[float, ...] = field(init=False)
 
     def __post_init__(self) -> None:
@@ -145,6 +152,8 @@ class FilePlan:
                     elif segment["text"].rstrip().endswith("?"):
                         pause = self.timing.maximum
                     pause = round(pause, 4)
+                if "pause_after_seconds" not in segment:
+                    pause = dict(self.turn_pauses).get(index + 1, pause)
                 pauses.append(pause)
         object.__setattr__(self, "resolved_after_pauses", tuple(pauses))
 
@@ -261,6 +270,7 @@ def manual_plan(
             cast = tuple(
                 (item.speaker_id, item.voice_id) for item in resolved.assignments
             )
+            cast = match_cast(source.document, choice, cast)
             used_voices.update(voice for _, voice in cast)
         files.append(
             FilePlan(
@@ -288,18 +298,34 @@ def edit_file(plan: BatchPlan, file_id: str, **changes: object) -> BatchPlan:
         "overwrite",
         "skipped",
         "issues",
+        "speaker_speeds",
+        "turn_speeds",
+        "turn_pauses",
+        "sentence_pause_seconds",
     }
     if not changes.keys() <= editable:
         raise ValueError("Unknown plan setting.")
     if file_id not in {item.source.file_id for item in plan.files}:
         raise ValueError("Unknown file ID.")
-    files = tuple(
-        replace(item, **changes, manual_fields=item.manual_fields | changes.keys())
-        if item.source.file_id == file_id
-        else item
-        for item in plan.files
-    )
-    return replace(plan, files=files, revision=plan.revision + 1)
+    files = []
+    for item in plan.files:
+        if item.source.file_id == file_id:
+            manual_cast = item.manual_cast
+            if "cast" in changes:
+                previous = dict(item.cast)
+                manual_cast |= {
+                    speaker
+                    for speaker, voice in changes["cast"]
+                    if previous.get(speaker) != voice
+                }
+            item = replace(
+                item,
+                **changes,
+                manual_cast=frozenset(manual_cast),
+                manual_fields=item.manual_fields | changes.keys(),
+            )
+        files.append(item)
+    return replace(plan, files=tuple(files), revision=plan.revision + 1)
 
 
 def bind_cast(
@@ -331,9 +357,25 @@ def resolved_document(item: FilePlan) -> ConversationDocument:
     if document is None:
         raise ValueError(item.source.error or "Invalid conversation document.")
     data = document.to_dict()
+    speaker_speeds = dict(item.speaker_speeds)
+    turn_speeds = dict(item.turn_speeds)
+    explicit_speeds = {
+        speaker.id for speaker in document.speakers if speaker.speech.speed is not None
+    }
+    for speaker in data["speakers"]:
+        if speaker["id"] in speaker_speeds and speaker["id"] not in explicit_speeds:
+            speaker.setdefault("speech", {})["speed"] = speaker_speeds[speaker["id"]]
     segments = data["segments"]
-    for segment, pause in zip(segments, item.resolved_after_pauses, strict=True):
+    for index, (segment, pause) in enumerate(
+        zip(segments, item.resolved_after_pauses, strict=True), 1
+    ):
         segment["pause_after_seconds"] = pause
+        if (
+            index in turn_speeds
+            and "speed" not in segment.get("speech", {})
+            and segment["speaker"] not in explicit_speeds
+        ):
+            segment.setdefault("speech", {})["speed"] = turn_speeds[index]
     return document.with_data(data)
 
 
@@ -410,6 +452,7 @@ def preflight(
                 raise ValueError("Select an available provider.")
             if plan.offline and choice.online:
                 raise ValueError("Fully offline mode requires a local TTS provider.")
+            _validate_scoped_settings(item, item.source.document)
             document = resolved_document(item)
             if len(dict(item.cast)) != len(item.cast):
                 raise ValueError("Duplicate cast speaker IDs.")
@@ -459,10 +502,25 @@ def preflight(
 
 def plan_settings(item: FilePlan) -> dict[str, object]:
     """Return safe reusable settings without source text, prompts or credentials."""
+    speeds = dict(item.turn_speeds)
+    pauses = dict(item.turn_pauses)
+    turns = []
+    for index in sorted(speeds.keys() | pauses.keys()):
+        turn = {"segment": index}
+        if index in speeds:
+            turn["speed"] = speeds[index]
+        if index in pauses:
+            turn["pause_after_seconds"] = pauses[index]
+        turns.append(turn)
     return {
         "provider": item.provider_id,
         "voices": dict(item.cast),
         "speed": item.speed,
+        "speaker_speeds": dict(item.speaker_speeds),
+        "turns": turns,
+        "text_pauses": {
+            "sentence": item.sentence_pause_seconds,
+        },
         "timing": asdict(item.timing),
         "scene": {
             "phone": [asdict(scope) for scope in item.scene.phone],
@@ -470,3 +528,24 @@ def plan_settings(item: FilePlan) -> dict[str, object]:
             "cues": [asdict(cue) for cue in item.scene.cues],
         },
     }
+
+
+def _validate_scoped_settings(item: FilePlan, document: ConversationDocument) -> None:
+    """Validate every proposed scope even if explicit source values mask it."""
+    speakers = {speaker.id for speaker in document.speakers}
+    _number(item.sentence_pause_seconds, 0, 5, "Sentence pause")
+    for values, allowed, label in (
+        (item.speaker_speeds, speakers, "Speaker speed"),
+        (item.turn_speeds, set(range(1, len(document.segments) + 1)), "Turn speed"),
+        (item.turn_pauses, set(range(1, len(document.segments) + 1)), "Turn pause"),
+    ):
+        if len(dict(values)) != len(values):
+            raise ValueError(f"Duplicate {label.lower()} identifiers.")
+        for identifier, value in values:
+            expected_type = str if label == "Speaker speed" else int
+            if type(identifier) is not expected_type or identifier not in allowed:
+                raise ValueError(f"Unknown {label.lower()} identifier.")
+            if label == "Turn pause":
+                _number(value, 0, 2, label)
+            else:
+                _number(value, 0.5, 2, label)

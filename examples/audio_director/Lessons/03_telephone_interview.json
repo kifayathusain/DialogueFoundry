@@ -1,7 +1,7 @@
 {
   "speakers": [
-    {"id": "alex", "role": "Host Alex", "voice_defaults": {"kokoro": "bm_george"}},
-    {"id": "guest", "role": "Remote guest Sam", "voice_defaults": {"kokoro": "bf_emma"}}
+    {"id": "alex", "role": "Host Alex", "gender": "male", "description": "The studio host, heard clearly in every turn.", "voice_defaults": {"kokoro": "bm_george"}},
+    {"id": "guest", "role": "Remote guest Sam", "gender": "female", "description": "A remote guest on the telephone during turns 2 through 4 only.", "voice_defaults": {"kokoro": "bf_emma"}}
   ],
   "segments": [
     {"speaker": "alex", "text": "Welcome to the studio. Our guest is joining us by telephone.", "pause_after_seconds": 0.25},

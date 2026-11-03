@@ -69,6 +69,8 @@ class DocumentSpeaker:
         default_factory=lambda: MappingProxyType({})
     )
     speech: SpeechSettings = field(default_factory=SpeechSettings)
+    gender: str = ""
+    description: str = ""
 
 
 @dataclass(frozen=True)
@@ -404,7 +406,15 @@ def _speaker(value: object, path: str, issues: _Diagnostics) -> DocumentSpeaker:
     data = _object(value, path, issues)
     _extensions(
         data,
-        {"id", "role", "voice_direction", "voice_defaults", "speech"},
+        {
+            "id",
+            "role",
+            "voice_direction",
+            "voice_defaults",
+            "speech",
+            "gender",
+            "description",
+        },
         path,
         issues,
     )
@@ -429,6 +439,8 @@ def _speaker(value: object, path: str, issues: _Diagnostics) -> DocumentSpeaker:
         direction,
         MappingProxyType(defaults),
         _speech(data, path, issues),
+        _string(data, "gender", path, issues, required=False),
+        _string(data, "description", path, issues, required=False),
     )
 
 

@@ -16,6 +16,7 @@ from tkinter import filedialog, ttk
 from typing import Any
 from uuid import uuid4
 
+from .config import DEFAULT_DIRECTOR_DIRECTION
 from .director import (
     BatchPlan,
     FilePlan,
@@ -31,6 +32,7 @@ from .director import (
     resolved_document,
     scan_folder,
 )
+from .director_cast import match_cast, review_cast
 from .director_planner import LLMConnection, LocalLLMPlanner, apply_proposal
 from .director_runner import (
     BatchEvent,
@@ -109,10 +111,14 @@ class AudioDirectorWindow(tk.Toplevel):
         self.use_ai = tk.BooleanVar(
             master=self,
         )
-        self.endpoint = tk.StringVar(master=self, value="http://127.0.0.1:11434/v1")
-        self.model = tk.StringVar(
-            master=self, value=os.environ.get("TTS_DIRECTOR_LLM_MODEL", "")
+        connection = LLMConnection.from_environment()
+        self.planner_provider = tk.StringVar(master=self, value=connection.provider)
+        self.endpoint = tk.StringVar(master=self, value=connection.endpoint)
+        self.model = tk.StringVar(master=self, value=connection.model)
+        self._local_endpoint = os.environ.get(
+            "TTS_DIRECTOR_LLM_ENDPOINT", "http://127.0.0.1:11434/v1"
         )
+        self.planner_summary = tk.StringVar(master=self)
         self.cloud = tk.BooleanVar(
             master=self,
         )
@@ -129,6 +135,10 @@ class AudioDirectorWindow(tk.Toplevel):
         )
         self.summary = tk.StringVar(master=self, value="No folder scanned.")
         self._build()
+        self.planner_provider.trace_add("write", self._planner_changed)
+        for variable in (self.model, self.endpoint, self.offline):
+            variable.trace_add("write", self._planner_summary_changed)
+        self._planner_summary_changed()
         for editor in (self.direction, self.cues, self.details):
             editor.bind("<Tab>", self._traverse_text)
             editor.bind("<Shift-Tab>", self._traverse_text)
@@ -199,6 +209,7 @@ class AudioDirectorWindow(tk.Toplevel):
         )
         direction.pack(fill="x", pady=6)
         self.direction = tk.Text(direction, height=3, wrap="word")
+        self.direction.insert("1.0", DEFAULT_DIRECTOR_DIRECTION)
         self.direction.pack(fill="x")
         row = ttk.Frame(direction)
         row.pack(fill="x")
@@ -220,7 +231,13 @@ class AudioDirectorWindow(tk.Toplevel):
             "LLM endpoint (loopback = local; other hosts = cloud)",
             self.endpoint,
         )
+        self._combo(
+            direction, "Planner provider", self.planner_provider, ("local", "openai")
+        )
         self._entry(direction, "LLM model", self.model)
+        ttk.Label(direction, textvariable=self.planner_summary, wraplength=800).pack(
+            anchor="w"
+        )
         row = ttk.Frame(direction)
         row.pack(fill="x")
         ttk.Checkbutton(
@@ -230,7 +247,7 @@ class AudioDirectorWindow(tk.Toplevel):
         ).pack(side="left")
         ttk.Checkbutton(
             row,
-            text="Include short dialogue excerpts for scene interpretation",
+            text="Include full dialogue for conversation direction (bounded)",
             variable=self.excerpts,
         ).pack(side="left")
         row = ttk.Frame(direction)
@@ -304,6 +321,7 @@ class AudioDirectorWindow(tk.Toplevel):
         self.timing = tk.StringVar(master=self, value="script")
         self.gap_min = tk.StringVar(master=self, value="0.12")
         self.gap_max = tk.StringVar(master=self, value="0.45")
+        self.sentence_pause = tk.StringVar(master=self, value="0")
         self.scene_preset = tk.StringVar(master=self, value="Clean narration")
         self.phone_speakers = tk.StringVar(
             master=self,
@@ -334,6 +352,7 @@ class AudioDirectorWindow(tk.Toplevel):
         row.pack(fill="x")
         self._entry(row, "Minimum eligible gap", self.gap_min, side="left")
         self._entry(row, "Maximum eligible gap", self.gap_max, side="left")
+        self._entry(settings, "Sentence pause within turns (0–5s)", self.sentence_pause)
         self._combo(
             settings,
             "Scene preset",
@@ -388,14 +407,30 @@ class AudioDirectorWindow(tk.Toplevel):
         """Build one focused area of the Director workspace."""
         cast_page = ttk.Frame(self.tabs, padding=6)
         self.tabs.add(cast_page, text="Cast")
-        self.cast = ttk.Treeview(
-            cast_page, columns=("voice", "locale", "availability"), height=5
+        columns = (
+            "voice",
+            "gender",
+            "provider",
+            "voice_name",
+            "origin",
+            "reason",
+            "locale",
+            "availability",
         )
+        self.cast = ttk.Treeview(cast_page, columns=columns, height=5)
         self.cast.heading("#0", text="Speaker ID / role")
-        for name in ("voice", "locale", "availability"):
-            self.cast.heading(name, text=name.title())
-            self.cast.column(name, width=150)
+        for name in columns:
+            self.cast.heading(name, text=name.replace("_", " ").title())
+            self.cast.column(name, width=150, stretch=False)
+        self.cast.heading("voice", text="Stable voice ID")
+        self.cast.heading("gender", text="Source gender")
+        self.cast.column("reason", width=330)
         self.cast.pack(fill="x")
+        cast_scroll = ttk.Scrollbar(
+            cast_page, orient="horizontal", command=self.cast.xview, takefocus=True
+        )
+        self.cast.configure(xscrollcommand=cast_scroll.set)
+        cast_scroll.pack(fill="x")
         self.cast.bind("<<TreeviewSelect>>", self._select_cast)
         self.voice = tk.StringVar(
             master=self,
@@ -648,8 +683,34 @@ class AudioDirectorWindow(tk.Toplevel):
 
     def _connection(self) -> LLMConnection:
         return LLMConnection(
-            self.endpoint.get().strip(), self.model.get().strip(), self.cloud.get()
+            self.endpoint.get().strip(),
+            self.model.get().strip(),
+            self.cloud.get(),
+            provider=self.planner_provider.get(),
         )
+
+    def _planner_changed(self, *args: object) -> None:
+        if self.planner_provider.get() == "openai":
+            self._local_endpoint = self.endpoint.get()
+            self.endpoint.set("https://api.openai.com/v1")
+        else:
+            self.endpoint.set(self._local_endpoint)
+        self._planner_summary_changed()
+
+    def _planner_summary_changed(self, *args: object) -> None:
+        provider = self.planner_provider.get()
+        text = (
+            f"Active planner: {provider} / {self.model.get() or '(model required)'}. "
+        )
+        if provider == "openai":
+            text += "OpenAI planning sends conversation metadata and opted-in dialogue to OpenAI. "
+        elif not self._connection().local:
+            text += "This endpoint sends conversation content to a cloud LLM. "
+        if self.offline.get():
+            text += "Fully offline blocks remote planning."
+        else:
+            text += "Remote planning requires the cloud consent checkbox."
+        self.planner_summary.set(text)
 
     def test_connection(self) -> None:
         planner = LocalLLMPlanner(self._connection())
@@ -704,6 +765,7 @@ class AudioDirectorWindow(tk.Toplevel):
                     if (
                         item.source.document is not None
                         and "provider_id" not in item.manual_fields
+                        and "cast" not in item.manual_fields
                         and item.provider_id != default_choice.provider_id
                     ):
                         resolved = resolve_document(
@@ -712,9 +774,13 @@ class AudioDirectorWindow(tk.Toplevel):
                         item = replace(
                             item,
                             provider_id=default_choice.provider_id,
-                            cast=tuple(
-                                (assignment.speaker_id, assignment.voice_id)
-                                for assignment in resolved.assignments
+                            cast=match_cast(
+                                item.source.document,
+                                default_choice,
+                                tuple(
+                                    (assignment.speaker_id, assignment.voice_id)
+                                    for assignment in resolved.assignments
+                                ),
                             ),
                         )
                     files.append(item)
@@ -807,6 +873,7 @@ class AudioDirectorWindow(tk.Toplevel):
         self.timing.set(item.timing.mode)
         self.gap_min.set(str(item.timing.minimum))
         self.gap_max.set(str(item.timing.maximum))
+        self.sentence_pause.set(str(item.sentence_pause_seconds))
         self.skipped.set(item.skipped)
         self.overwrite.set(item.overwrite)
         self.room_mode.set("Off" if not item.scene.room_level else "Custom")
@@ -846,9 +913,24 @@ class AudioDirectorWindow(tk.Toplevel):
         details = list(self.errors.get(item.source.file_id, ()))
         details.extend(item.issues)
         if item.source.document:
+            cast_reviews = (
+                {
+                    row.speaker_id: row
+                    for row in review_cast(
+                        item.source.document,
+                        choice,
+                        item.cast,
+                        manual=item.manual_cast,
+                        ai=item.ai_cast,
+                    )
+                }
+                if choice
+                else {}
+            )
             for speaker in item.source.document.speakers:
                 voice = dict(item.cast).get(speaker.id, "")
                 metadata = voices.get(voice)
+                review = cast_reviews.get(speaker.id)
                 availability = "Verify with Build plan"
                 if self.errors.get(item.source.file_id):
                     availability = "Needs attention"
@@ -863,10 +945,20 @@ class AudioDirectorWindow(tk.Toplevel):
                     text=f"{speaker.id} / {speaker.role}",
                     values=(
                         voice,
+                        speaker.gender or "Not supplied",
+                        item.provider_id,
+                        metadata.display_name if metadata else "Unavailable",
+                        review.origin if review else "Needs review",
+                        review.reason if review else "Provider unavailable",
                         metadata.language if metadata else "Unknown",
-                        availability,
+                        ("Needs review; " if review and review.needs_review else "")
+                        + availability,
                     ),
                 )
+                if review:
+                    details.append(
+                        f"Cast {speaker.id}: {review.origin}; {voice}; {review.reason}."
+                    )
             resolved = resolved_document(item)
             for index, (source, segment) in enumerate(
                 zip(
@@ -1000,9 +1092,13 @@ class AudioDirectorWindow(tk.Toplevel):
                     resolved = resolve_document(
                         target.source.document, choice, locale="en-GB"
                     )
-                    cast = tuple(
-                        (voice.speaker_id, voice.voice_id)
-                        for voice in resolved.assignments
+                    cast = match_cast(
+                        target.source.document,
+                        choice,
+                        tuple(
+                            (voice.speaker_id, voice.voice_id)
+                            for voice in resolved.assignments
+                        ),
                     )
                 changes = {
                     "provider_id": choice.provider_id,
@@ -1010,6 +1106,7 @@ class AudioDirectorWindow(tk.Toplevel):
                     if self.speed.get().strip()
                     else None,
                     "timing": timing,
+                    "sentence_pause_seconds": float(self.sentence_pause.get()),
                     "scene": scene,
                 }
                 if target.provider_id != choice.provider_id:
@@ -1194,7 +1291,7 @@ class AudioDirectorWindow(tk.Toplevel):
             proposal = {
                 key: value for key, value in data.items() if key not in {"kind", "name"}
             }
-            current = apply_proposal(plan, proposal, self.choices)
+            current = apply_proposal(plan, proposal, self.choices, ai=False)
             return (
                 current,
                 self.excluded,

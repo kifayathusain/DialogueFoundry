@@ -23,6 +23,7 @@ from .provider_manager import ProviderChoice
 from .providers.base import CancellationToken, SynthesisRequest, TTSProvider
 from .service import generate_conversation
 from .speaker_mapping import resolve_document
+from .text_processing import TextProcessingSettings
 
 
 class DirectorProviders(Protocol):
@@ -112,6 +113,7 @@ async def render_file(
     progress: Callable[[int, int], None] | None = None,
     preview: str | None = None,
     preview_output: Path | None = None,
+    export_settings: ExportSettings | None = None,
 ) -> Path:
     """Use the structured service and validated exporter for every render mode."""
     token.raise_if_cancelled()
@@ -121,7 +123,9 @@ async def render_file(
     if plan.offline and provider.get_capabilities().online:
         raise ValueError("Fully offline mode requires a local synthesis provider.")
     destination = plan.output_folder / item.destination_name
-    settings = ExportSettings(audio_format=plan.audio_format, overwrite=item.overwrite)
+    settings = export_settings or ExportSettings(
+        audio_format=plan.audio_format, overwrite=item.overwrite
+    )
     if preview is not None:
         if preview not in {"original", "directed"} or preview_output is None:
             raise ValueError("Select Original or Directed audition and a cache file.")
@@ -147,6 +151,9 @@ async def render_file(
             provider_id=item.provider_id,
             provider=provider,
             speed=item.speed,
+            text_settings=TextProcessingSettings(
+                sentence_pause_seconds=item.sentence_pause_seconds,
+            ),
             output_dir=Path(work),
             final_audio=destination,
             export_settings=settings,

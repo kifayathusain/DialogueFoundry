@@ -9,7 +9,14 @@ import pytest
 
 from tests.test_director import write_source
 from tests.test_director_audio import ToneProviders
+from tests.test_director_direction import (
+    GenderProviders,
+    fake_openai,
+    gender_batch,
+    proposal_for,
+)
 from ttsapp import director_gui
+from ttsapp.config import DEFAULT_DIRECTOR_DIRECTION
 from ttsapp.director import PhoneScope, SceneSettings
 from ttsapp.director_gui import AudioDirectorWindow, DirectorEvent
 from ttsapp.models.manager import ModelManager
@@ -25,6 +32,14 @@ class UIProviders(ToneProviders):
         self.closed = True
 
 
+@pytest.fixture(scope="module")
+def director_root():
+    """Reuse one Tcl interpreter for the module's independent Director windows."""
+    root = tk.Tk()
+    yield root
+    root.destroy()
+
+
 def pump(window, timeout=20):
     deadline = time.monotonic() + timeout
     while window._worker is not None and time.monotonic() < deadline:
@@ -35,8 +50,10 @@ def pump(window, timeout=20):
 
 
 @pytest.mark.integration
-def test_desktop_manual_job_stale_scan_audition_and_retry(tmp_path, monkeypatch):
-    root = tk.Tk()
+def test_desktop_manual_job_stale_scan_audition_and_retry(
+    tmp_path, monkeypatch, director_root
+):
+    root = director_root
     providers = UIProviders(tmp_path / "models")
     window = AudioDirectorWindow(root, providers)
     monkeypatch.setattr(window._player, "play", lambda path: None)
@@ -121,4 +138,110 @@ def test_desktop_manual_job_stale_scan_audition_and_retry(tmp_path, monkeypatch)
             time.sleep(0.01)
         assert not window.winfo_exists()
         assert providers.closed
-        root.destroy()
+
+
+@pytest.mark.integration
+def test_openai_cast_review_manual_rebuild_errors_and_rendering(
+    tmp_path, monkeypatch, director_root
+):
+    import json
+
+    source_plan, _ = gender_batch(tmp_path)
+    monkeypatch.setenv("TTS_DIRECTOR_LLM_PROVIDER", "openai")
+    monkeypatch.setenv("TTS_DIRECTOR_LLM_MODEL", "configured-openai-model")
+    root = director_root
+    providers = GenderProviders(tmp_path / "ui-models")
+    window = AudioDirectorWindow(root, providers)
+    monkeypatch.setattr(window._player, "play", lambda path: None)
+    try:
+        assert window.direction.get("1.0", "end").strip() == DEFAULT_DIRECTOR_DIRECTION
+        assert "OpenAI" in window.planner_summary.get()
+        assert "configured-openai-model" in window.planner_summary.get()
+        window.direction.delete("1.0", "end")
+        direction = "My edited direction. Use the declared metadata."
+        window.direction.insert("1.0", direction)
+        window.source.set(str(source_plan.input_folder))
+        window.destination.set(str(tmp_path / "ui-output"))
+        window.audio_format.set("wav")
+        window.scan()
+        pump(window)
+        assert window.direction.get("1.0", "end").strip() == direction
+        assert window.cast.item("host", "values")[0:4] == (
+            "male-a",
+            "male",
+            providers.provider.provider_id,
+            "Voice A",
+        )
+        assert window.cast.item("guest", "values")[0:4] == (
+            "female-a",
+            "female",
+            providers.provider.provider_id,
+            "Voice C",
+        )
+        proposal = proposal_for(window.plan)
+        calls = fake_openai(monkeypatch, json.dumps(proposal))
+        window.use_ai.set(True)
+        window.cloud.set(True)
+        original = window.plan
+        window.build_plan()
+        pump(window)
+        assert calls == []
+        assert window.plan is original
+        assert "local loopback" in window.status.get()
+        window.offline.set(False)
+        window.excerpts.set(True)
+        window.build_plan()
+        pump(window)
+        assert not window.errors["lesson.json"], window.status.get()
+        payload = calls[-1][3]
+        assert payload["model"] == "configured-openai-model"
+        assert json.loads(payload["messages"][1]["content"])["direction"] == direction
+        assert window.cast.item("host", "values")[4] == "AI match"
+        window.cast.selection_set("host")
+        window.voice.set("male-b")
+        window.apply_voice()
+        corrected = window.plan
+        failed_calls = fake_openai(monkeypatch, "private body", status=401)
+        window.build_plan()
+        pump(window)
+        assert "authentication" in window.status.get()
+        assert failed_calls[0][0].closed
+        assert window.plan is corrected
+        assert window.cast.item("host", "values")[0] == "male-b"
+        fake_openai(monkeypatch, "not JSON")
+        window.build_plan()
+        pump(window)
+        assert "valid JSON" in window.status.get()
+        assert window.plan is corrected
+        fake_openai(monkeypatch, json.dumps(proposal))
+        window.build_plan()
+        pump(window)
+        assert window.cast.item("host", "values")[0] == "male-b"
+        assert window.cast.item("host", "values")[4] == "Manual override"
+        assert window.cast.item("guest", "values")[4] == "AI match"
+        assert "manual" in window.details.get("1.0", "end")
+        window.accept_review()
+        window.preview("directed")
+        pump(window)
+        assert window._preview.is_file(), window.status.get()
+        assert [request.voice_id for request in providers.provider.requests] == [
+            "male-b",
+            "female-a",
+        ]
+        window.generate()
+        pump(window)
+        assert window.results[0].state == "completed", window.status.get()
+        assert [request.voice_id for request in providers.provider.requests[2:4]] == [
+            "male-b",
+            "female-a",
+        ]
+        assert window.direction.get("1.0", "end").strip() == direction
+    finally:
+        if window._worker is not None:
+            window.cancel()
+            pump(window)
+        window.close()
+        deadline = time.monotonic() + 5
+        while window.winfo_exists() and time.monotonic() < deadline:
+            root.update()
+            time.sleep(0.01)

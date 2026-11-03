@@ -1,7 +1,7 @@
 {
   "speakers": [
-    {"id": "alex", "role": "Alex", "voice_defaults": {"kokoro": "bm_george"}},
-    {"id": "sam", "role": "Sam", "voice_defaults": {"kokoro": "bf_emma"}}
+    {"id": "alex", "role": "Alex", "gender": "male", "description": "A student discussing the lesson in person.", "voice_defaults": {"kokoro": "bm_george"}},
+    {"id": "sam", "role": "Sam", "gender": "female", "description": "A fellow student in the same room.", "voice_defaults": {"kokoro": "bf_emma"}}
   ],
   "segments": [
     {"speaker": "alex", "text": "What did you think of the lesson?", "pause_after_seconds": 0},
