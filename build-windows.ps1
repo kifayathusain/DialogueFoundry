@@ -83,7 +83,6 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "Dependency notices could not be generated."
     }
-    Copy-Item -LiteralPath (Join-Path $repoRoot "docs/setup/WINDOWS_PACKAGE.md") -Destination $distribution
     if ($FFmpegDirectory) {
         $tools = Join-Path $distribution "tools"
         New-Item -ItemType Directory -Path $tools | Out-Null

@@ -1,219 +1,121 @@
-# Windows TTS App
+# DialogueFoundry
 
-Generates conversations from plain-text scripts or structured JSON with editable
-role-to-voice mappings and exact segment after-pauses. Choose Microsoft Edge TTS
-or installed CPU-only Piper/Kokoro voices, then export WAV, MP3 or M4A with FFmpeg. The desktop application is named **Windows TTS App**; its
-version is shown in the window title and is maintained as `APP_VERSION` in
-`ttsapp/config.py`.
+**Turn scripts into multi-voice audio on Windows.**
 
-## Prerequisites
+DialogueFoundry turns written conversations into ordered speech with distinct
+voices, pauses and optional scene effects. Use it for fictional interviews,
+language lessons, narrated scripts and dialogue prototypes. Choose local CPU
+voices with Piper or Kokoro, or the online Microsoft Edge TTS service.
 
-- Python 3.10–3.13 for all providers (3.13 recommended). Edge/Piper also tested on 3.14.
-- [FFmpeg and FFprobe](https://ffmpeg.org/) installed and available on `PATH`
-  for source runs and packages without bundled tools.
-- Internet for Edge TTS and initial model downloads. Installed local voices run
-  offline on CPU; no API key or GPU is required.
+This is a **preview preparation**, not a stable release announcement. The source
+reports version **1.0.0**; that number does not establish release readiness.
+No downloadable package is advertised here. Some model terms and third-party
+distribution requirements remain unresolved; see
+[Licensing](documentation/LICENSING.md) and
+[Known limitations](documentation/KNOWN_LIMITATIONS.md).
 
-## Install
+## What it can do
+
+- Read `Speaker: text` scripts or structured JSON with stable speaker IDs.
+- Map speakers to voices, preserve ordered turns and explicit pauses, and save
+  structured projects and reusable role mappings.
+- Preview local voices, replay or stop playback, report progress and cancel work.
+- Export validated WAV, MP3 and M4A with optional normalization and audio settings.
+- Manage explicit, checksum-verified model downloads in the desktop Model library.
+- Review folder batches in Audio Director, audition exchanges and apply scoped
+  telephone effects. Manual operation needs no planning service. Optional AI
+  planning requires a separately configured local or cloud endpoint.
+- Use Audio Director CLI direction files for mixed-provider casts.
+
+## Providers
+
+| Provider | Connectivity | Runtime installation | Model downloads | Limits |
+| --- | --- | --- | --- | --- |
+| Microsoft Edge TTS | Internet for synthesis | Base `requirements.txt` | No local weights | External service; availability and terms can change. No user API key in this TTS path. Explicit speed control is unsupported by this app. |
+| Piper | Local synthesis after setup | `requirements-piper.txt` | Select each model in Model library | CPU; model quality and license vary; includes voices with restrictive or unclear terms. |
+| Kokoro-82M | Local synthesis after setup | `requirements-kokoro.txt`, Python 3.10–3.13 | Shared model and voice-style assets | CPU; pinned English catalog; phonemization includes GPL components. |
+
+Local installation and downloads require network access. Edge use and cloud
+planning send data off the machine; cloud planning can require credentials and
+paid service access. See [Privacy](documentation/PRIVACY.md).
+
+## Windows quick start
+
+Use Windows x64, Python **3.10–3.13** with Tkinter, Git, and FFmpeg with FFprobe
+available on `PATH`. Python 3.13 is a suitable shared environment for the optional
+providers. Install media tools from a source you trust; check their licensing
+before redistributing them. Verify in a new PowerShell window:
 
 ```powershell
-python -m venv .venv
+git clone https://github.com/kifayathusain/speech-to-text-windows-app.git
+cd speech-to-text-windows-app
+py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-# optional, for running tests:
-.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-```
-
-## Usage
-
-### Desktop app (Windows)
-
-```powershell
+.\.venv\Scripts\python.exe -c "import tkinter; print('Tkinter available')"
+ffmpeg -version
+ffprobe -version
 .\.venv\Scripts\python.exe app.py
 ```
 
-Use **Plain text** for the familiar `Speaker: text` editor and configured
-Receptionist/Caller defaults. Choose one provider per job. **Open / Import** uses
-the extension to open plain text or validated JSON; invalid JSON never falls back
-to text. **JSON** shows every declared role, ordered segments and preflight
-diagnostics. Select a role or segment, edit its fields, then use **Apply role** or
-**Apply segment**. Unsupported explicit settings block generation.
+The product name is DialogueFoundry. Existing windows and user storage still use
+**Windows TTS App**, and locally built executables are **WindowsTTSApp.exe**.
+The Python package remains `ttsapp`.
 
-**JSON Save As** exports source dialogue/settings/extensions. **Save project As**
-also preserves active voice mappings, provider/locale and processing/export
-settings. **Open project** restores its embedded snapshot even if the original
-source moved. **Apply preset** explicitly enables exact role/provider/locale
-preferences for automatic roles while preserving manual/project selections.
-Directions are visible notes; they do not enforce emotion or style. Edge does not
-support explicit speed. Repeated voice IDs produce shared-voice warnings.
+## First export from a tracked sample
 
-Preview uses selected-role dialogue and effective supported speed, with an explicit
-**speech only** label. Generate, Cancel, Play/Replay, Stop, model-library access,
-output browsing and overwrite confirmation remain available. **Advanced export
-options** exposes codec, bitrate, sample rate, channels and normalization. The
-editing surface scrolls at small sizes and keyboard focus reveals off-screen
-fields. See the [structured desktop guide](docs/setup/STRUCTURED_DESKTOP.md).
-
-The default desktop output is
-`%USERPROFILE%\Documents\Windows TTS App\conversation.mp3`; isolated job
-parts are retained in adjacent `audio_parts`. Existing final audio is published
-atomically only after successful validation. Model verification, import, synthesis
-and FFmpeg work use background workers; no import automatically downloads models
-or previews voices. Tkinter remains the desktop framework.
-
-Current acceptance: M13/M14 pass the approved offline/fake-provider gates.
-M15–M17 remain blocked on required 150%/200% Windows OS scaling evidence; the
-tested development display reports 100%. M10's separate clean-machine blocker
-is unchanged. See the [tracker](docs/milestones/MILESTONE_TRACKER.md).
-
-### Build a distributable Windows app
-
-Use Python 3.10–3.13 with Tkinter for the full CPU package:
+With internet access and media tools installed, run from the repository root:
 
 ```powershell
-python -m venv .build-venv
-.\.build-venv\Scripts\python.exe -m pip install -r requirements-build.txt
-.\build-windows.ps1 -PythonExecutable .\.build-venv\Scripts\python.exe
+.\.venv\Scripts\python.exe main.py --input examples/hello.txt --provider edge --output hello.wav
 ```
 
-Each build creates a fresh `dist/release-*` directory and portable ZIP, preserving
-previous builds. Extract the complete folder and launch `WindowsTTSApp.exe`.
-The full profile includes Kokoro, Piper and Edge runtimes; model weights remain
-separate downloads. Optional `-FFmpegDirectory` bundles explicitly supplied,
-license-documented FFmpeg and FFprobe tools with integrity hashes; otherwise both
-must be installed on PATH. See [Windows package setup](docs/setup/WINDOWS_PACKAGE.md)
-for build profiles, diagnostics, licensing status and the required clean Windows
-11 completion check. No release is published automatically.
+The sample uses the configured `Receptionist` and `Caller` labels. Choose an
+unused output name, or explicitly add `--overwrite` to replace it. This command
+performs real online synthesis when you run it. For an offline first export,
+install a local runtime and its model first; follow
+[Getting started](documentation/GETTING_STARTED.md).
 
-### Troubleshooting
+## Desktop and CLI
 
-- **"FFmpeg is required" / FFmpeg not found:** Install FFmpeg, add the folder
-  containing `ffmpeg.exe` to the Windows `PATH`, restart the app, and verify
-  from PowerShell with `ffmpeg -version`.
-- **Speech generation failed:** Confirm internet access and try again. If
-  you changed a voice, verify its Edge TTS voice name; the underlying service
-  error is shown in the dialog.
-- **Cannot save the output:** Use "Browse..." to choose a folder where your
-  Windows account has write access, such as Documents.
-- **FFmpeg could not combine the audio:** Check the FFmpeg installation and
-  available disk space. The dialog includes FFmpeg's error details; the
-  existing final audio is preserved when combination fails.
-
-### Command line
-
-1. Edit `conversation.txt` with lines formatted as `Speaker: text`, one line
-   of dialogue per line of the file. Blank lines are ignored.
-2. Each `Speaker` label must have a configured voice in
-   `ttsapp/config.py` (`VOICES`). The defaults are `Receptionist` and
-   `Caller`.
-3. Run the app:
-
-   ```powershell
-   .\.venv\Scripts\python.exe main.py
-   ```
-
-   This generates one MP3 per line in `audio_parts/` and combines them into
-   `conversation.mp3` in the repository root.
-
-Additive JSON CLI usage:
+Run `app.py` for the desktop. Choose your provider, configure voices, preview,
+then generate. The structured JSON editor supports more than the legacy two
+speaker controls. **Audio Director…** opens folder planning and batch rendering.
 
 ```powershell
-python main.py --input docs/tts-sample.json --input-format json --provider edge --output dialogue.wav
-python main.py --input dialogue.json --voice-map voices.json --output dialogue.m4a --overwrite
+.\.venv\Scripts\python.exe main.py --help
+.\.venv\Scripts\python.exe main.py --input examples/hello.conversation.json --provider edge --voice-map examples/hello.edge-voices.json --output dialogue.mp3
+.\.venv\Scripts\python.exe main.py director --help
 ```
 
-Audio Director can cast each speaker independently across Kokoro, Piper and Edge
-in one conversation, with discovery, a reviewable validated plan and no extra
-in-app LLM call. See the [copyable mixed-provider example and reusable Codex
-prompt](examples/audio_director/README.md).
+Running `main.py` without arguments retains a legacy `conversation.txt` default;
+that personal input file is not supplied in a fresh clone. Use the explicit sample
+command above. See [Usage and examples](documentation/USAGE.md) for mappings,
+pauses and Director commands.
 
-Mappings, speed validation, exact after-pauses and exports use the same service as
-the desktop. New explicit CLI exports refuse replacement without `--overwrite`.
-See [projects, presets and CLI contracts](docs/PROJECTS_AND_CLI.md). The commands
-above perform synthesis when a user runs them; acceptance for this follow-up used
-only injected fake providers and synthetic non-speech media.
+## Documentation
 
-If generation is interrupted after the per-line audio files already exist,
-you can re-run just the combination step:
+- [Getting started](documentation/GETTING_STARTED.md)
+- [Providers and models](documentation/PROVIDERS_AND_MODELS.md)
+- [Usage and examples](documentation/USAGE.md)
+- [Privacy](documentation/PRIVACY.md)
+- [Troubleshooting](documentation/TROUBLESHOOTING.md)
+- [Architecture](documentation/ARCHITECTURE.md)
+- [Release process](documentation/RELEASE_PROCESS.md)
+- [Known limitations](documentation/KNOWN_LIMITATIONS.md)
 
-```powershell
-.\.venv\Scripts\python.exe gen_audio.py
-```
+Clean Windows installation acceptance and high-DPI desktop checks remain pending.
+AI planning is experimental; review casts and effects and listen to outputs.
+Catalog accent metadata does not guarantee a specific delivery or voice quality.
 
-## Architecture
+## Community and licensing
 
-The CLI and Tkinter views share `ttsapp/service.py`. Legacy text uses
-`parser.py`; structured input uses `conversation_document.py` and the pure
-`speaker_mapping.py` resolver. Processed generation in `generation.py` retains
-source spans, effective per-segment speed and ordered speech/silence metadata.
-Provider implementations remain behind their common interface, with verified
-model lifecycle separate from audio processing and UI state. `audio_export.py`
-owns validated codecs/layout preparation and atomic publication.
-`project_storage.py` handles bounded data-only snapshots and presets.
-See the [current architecture](docs/architecture/ARCHITECTURE.md).
+Read [Contributing](CONTRIBUTING.md), the [Code of Conduct](CODE_OF_CONDUCT.md),
+[Support](SUPPORT.md), [Security](SECURITY.md) and [Changelog](CHANGELOG.md).
+Private reporting contacts still need maintainer configuration.
 
-## Audio exports
-
-The desktop supports validated WAV, MP3, and M4A with bitrate, sample-rate,
-mono/stereo, optional loudness normalization, cancellation, and explicit output
-replacement. Both FFmpeg and FFprobe must be on PATH for validated exports.
-See [export setup](docs/setup/AUDIO_EXPORTS.md).
-
-## Model library
-
-Open **Model library...** to download, verify, cancel, reinstall, or remove
-supported offline model files. Runtime and license details appear with each
-model; Python inference dependencies are installed separately. See
-[model library setup](docs/setup/MODEL_LIBRARY.md) for storage and recovery.
-
-## Provider architecture
-
-Generation now resolves a provider through `ttsapp/providers/registry.py`.
-Microsoft Edge TTS remains the default, with the original CLI and desktop
-behavior. The typed provider contract and cancellation boundaries are documented
-in [the provider contract](docs/architecture/PROVIDER_CONTRACT.md).
-Local model runtimes are optional and are not imported by default Edge routing.
-The optional [Piper CPU provider](docs/setup/PIPER.md) is available through the desktop, JSON CLI and
-Python API with explicitly verified local voices. The [Kokoro-82M CPU provider](docs/setup/KOKORO.md) is available on Python
-3.10–3.13. The desktop now includes provider selection, local voice previews, replay/stop,
-progress, and cancellation; see [desktop controls](docs/setup/DESKTOP_PREVIEW.md). See the
-[tracker](docs/milestones/MILESTONE_TRACKER.md) for validated status.
-
-[M11](docs/milestones/M11_ENGLISH_VOICES.md) adds the complete pinned British and
-American English inventory: 28 Kokoro voices and 2,006 Piper speaker/quality
-choices across 38 model variants. Search voices by name, quality or speaker and
-filter en-US/en-GB in the desktop. Install selected Piper models through
-[Model library](docs/setup/MODEL_LIBRARY.md); all Kokoro voices share one model
-installation. Downloads remain explicit, with verified assets and per-model
-license information.
-
-## Tests
-
-Contributors and Codex sessions must start with [AGENTS.md](AGENTS.md) and follow
-the authoritative [coding standards](docs/CODING_STANDARDS.md). Development
-tools are installed from `requirements-dev.txt`; Ruff and pytest are configured
-in `pyproject.toml`. See the [milestone plan](docs/milestones/MASTER_PLAN.md) and
-[tracker](docs/milestones/MILESTONE_TRACKER.md) for scope and completion gates.
-
-```powershell
-.\.venv\Scripts\python.exe -m ruff format --check .
-.\.venv\Scripts\python.exe -m ruff check .
-.\.venv\Scripts\python.exe -m pytest -q
-```
-
-The automated suite covers parsing, long Unicode input, multiple voices and
-segments, output-path creation, reruns/overwrites, TTS and FFmpeg failures,
-cancellation cleanup, and the desktop UI's background-worker/queue boundary.
-Tests mock the Edge TTS and FFmpeg adapters, so they run offline and without
-requiring the `ffmpeg` executable.
-
-For package acceptance, follow the extracted-executable and clean-machine
-checks in [Windows package setup](docs/setup/WINDOWS_PACKAGE.md). An isolated
-folder on the development host is useful validation but does not establish a
-clean Windows 11 installation. The [tracker](docs/milestones/MILESTONE_TRACKER.md)
-records which completion gates have actually passed.
-## Audio Director
-
-Launch `python app.py`, then choose **Audio Director…** for folder-based manual or
-AI-directed conversation batches, multi-turn audition, scoped phone treatment
-and validated MP3/WAV/M4A exports. See the [setup and worked Lessons walkthrough](docs/setup/AUDIO_DIRECTOR.md)
-and [acceptance evidence / outstanding prerequisites](docs/milestones/M18_M21_AUDIO_DIRECTOR.md).
+DialogueFoundry is licensed under **GPL-3.0-or-later**.
+Copyright (C) 2026 Kifayat Husain. See the complete [license](LICENSE) and
+[copyright and scope notice](COPYRIGHT.md). Third-party licenses remain in force;
+see [Licensing](documentation/LICENSING.md) and
+[Third-party notices](THIRD_PARTY_NOTICES.md). Application licensing does not grant
+unrestricted rights to voice models, external services or generated audio.

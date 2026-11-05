@@ -1,0 +1,53 @@
+name: Bug report
+description: Report a nonsensitive DialogueFoundry problem with sanitized diagnostics.
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: "Do not disclose vulnerabilities here. Read SECURITY.md. Remove private text, paths, audio, API keys and credentials from all fields."
+  - type: input
+    id: version
+    attributes:
+      label: Application version and source revision or package identity
+      description: The current source reports 1.0.0; also identify the checkout or package.
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version and build
+      description: Include display scale and resolution for desktop issues.
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: TTS provider
+      options:
+        - Edge
+        - Piper
+        - Kokoro
+        - Mixed providers
+        - Not applicable
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps and fictional minimal input
+      description: Include the command or desktop actions, model/voice IDs and whether assets verified.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized diagnostics and dependency versions
+      description: Include Python, provider runtime, FFmpeg and FFprobe versions and the redacted error. Never paste an environment dump.
+    validations:
+      required: true

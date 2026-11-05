@@ -38,7 +38,7 @@ def choice(provider="local", speed=True):
 
 
 def test_sample_defaults_shared_edge_and_summary():
-    sample = load_document(Path("docs/tts-sample.json"))
+    sample = load_document(Path("examples/structured/tts-sample.json"))
     edge = ProviderChoice("edge", "Edge", choice().voices[:2], True, False)
     result = resolve_document(sample, edge)
     assert len(result.assignments) == 3

@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "provider_id": "kokoro",
+  "voices": {"guide": "bf_emma", "visitor": "bm_george"}
+}

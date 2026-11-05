@@ -21,7 +21,9 @@ from ttsapp.conversation_document import (
     serialize_document,
 )
 
-SAMPLE = Path(__file__).resolve().parents[1] / "docs" / "tts-sample.json"
+SAMPLE = (
+    Path(__file__).resolve().parents[1] / "examples" / "structured" / "tts-sample.json"
+)
 
 
 def minimal() -> dict:

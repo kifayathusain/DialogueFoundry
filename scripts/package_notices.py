@@ -10,9 +10,52 @@ from pathlib import Path
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 
+PUBLIC_FILES = (
+    "README.md",
+    "COPYRIGHT.md",
+    "THIRD_PARTY_NOTICES.md",
+    "CONTRIBUTING.md",
+    "CODE_OF_CONDUCT.md",
+    "SECURITY.md",
+    "SUPPORT.md",
+    "CHANGELOG.md",
+)
+
+
+def copy_public_material(output: Path) -> bool:
+    """Retain public guides/notices without importing private development records."""
+    repository = Path(__file__).resolve().parent.parent
+    for name in PUBLIC_FILES:
+        shutil.copy2(repository / name, output / name)
+    shutil.copytree(
+        repository / "documentation", output / "documentation", dirs_exist_ok=True
+    )
+    examples = repository / "examples"
+    for pattern in (
+        "hello*",
+        "structured/*.json",
+        "audio_director/*.json",
+        "audio_director/Lessons/*.json",
+    ):
+        for source in examples.glob(pattern):
+            if source.is_file():
+                target = output / source.relative_to(repository)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target)
+    for name in ("catalog.py", "piper_english.json"):
+        source = repository / "ttsapp" / "models" / name
+        target = output / "ttsapp" / "models" / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+    application_license = repository / "LICENSE"
+    if application_license.is_file():
+        shutil.copy2(application_license, output / "LICENSE")
+        return True
+    return False
+
 
 def write_notices(output: Path, profile: str) -> None:
-    """Inventory runtime dependency closure without assigning an application license."""
+    """Retain dependency evidence without claiming distribution clearance."""
     pending = ["edge-tts", "pyinstaller"]
     if profile == "full":
         pending.extend(("kokoro-onnx", "piper-tts"))
@@ -34,7 +77,8 @@ def write_notices(output: Path, profile: str) -> None:
             if ".." in asset.parts:
                 continue
             if not any(
-                word in asset.name.lower() for word in ("license", "copying", "notice")
+                word in asset.name.lower()
+                for word in ("license", "copying", "notice", "authors")
             ):
                 continue
             source = Path(distribution.locate_file(asset))
@@ -48,6 +92,12 @@ def write_notices(output: Path, profile: str) -> None:
                 "name": distribution.metadata["Name"],
                 "version": distribution.version,
                 "license_expression": distribution.metadata.get("License-Expression"),
+                "license": distribution.metadata.get("License"),
+                "license_classifiers": [
+                    value
+                    for value in distribution.metadata.get_all("Classifier", [])
+                    if value.startswith("License ::")
+                ],
                 "project_urls": distribution.metadata.get_all("Project-URL", []),
                 "license_files": copied,
             }
@@ -60,17 +110,25 @@ def write_notices(output: Path, profile: str) -> None:
     if not python_license.is_file():
         raise FileNotFoundError("The build runtime must provide Python LICENSE.txt.")
     shutil.copy2(python_license, output / "licenses" / "PYTHON-LICENSE.txt")
+    has_application_license = copy_public_material(output)
     (output / "dependency-inventory.json").write_text(
         json.dumps(sorted(records, key=lambda item: item["name"]), indent=2) + "\n",
         encoding="utf-8",
     )
     (output / "THIRD_PARTY_NOTICES.txt").write_text(
-        "Local QA build. See licenses/ and dependency-inventory.json.\n"
-        "The full profile includes GPL Piper, phonemizer and eSpeak components.\n"
-        "No application license is assigned by the build script. Before public\n"
-        "distribution, resolve application-license compatibility and retain\n"
-        "complete corresponding source/build materials for GPL components.\n"
-        "Model weights are downloaded separately with individual notices.\n",
+        "DialogueFoundry local QA build; NOT cleared for public distribution.\n"
+        "See THIRD_PARTY_NOTICES.md, documentation/LICENSING.md, licenses/ and\n"
+        "dependency-inventory.json. A metadata inventory is not a complete\n"
+        "native-binary audit or corresponding-source distribution.\n"
+        + (
+            "Application LICENSE copied; its presence is not distribution clearance.\n"
+            if has_application_license
+            else "No application LICENSE present; restore it before distribution.\n"
+        )
+        + "Full profiles include GPL Piper, phonemizer and eSpeak components.\n"
+        "Resolve missing native notices, permissions and complete matching\n"
+        "corresponding source/build materials before binary distribution.\n"
+        "Model weights have separate, sometimes restrictive or unresolved terms.\n",
         encoding="utf-8",
     )
 

@@ -1,0 +1,4 @@
+# Preserve audited upstream notice bytes and their inventory hashes on Windows.
+LICENSE -text
+documentation/third-party/** -text
+documentation/third-party/**/*.json text eol=lf

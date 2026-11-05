@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "speakers": [
+    {"id": "guide", "role": "Observatory guide"},
+    {"id": "visitor", "role": "Visitor"}
+  ],
+  "segments": [
+    {"speaker": "guide", "text": "Welcome to our fictional observatory.", "pause_after_seconds": 0.3},
+    {"speaker": "visitor", "text": "What can we see tonight?", "pause_after_seconds": 0.2},
+    {"speaker": "guide", "text": "Let us start with the moon.", "pause_after_seconds": 0.5}
+  ]
+}

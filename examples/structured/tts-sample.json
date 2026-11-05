@@ -1,0 +1,151 @@
+{
+    "speakers": [
+        {
+            "id": "narrator",
+            "role": "Narrator",
+            "voice_direction": "Clear, neutral delivery; do not read labels or pause annotations."
+        },
+        {
+            "id": "clerk",
+            "role": "Repair adviser",
+            "voice_direction": "Natural conversational delivery; use a distinct consistent voice."
+        },
+        {
+            "id": "customer",
+            "role": "Customer",
+            "voice_direction": "Natural conversational delivery; use a distinct consistent voice."
+        }
+    ],
+    "segments": [
+        {
+            "speaker": "narrator",
+            "text": "Part 1. You will hear a customer arranging to have a family quilt repaired. You now have thirty seconds to look at questions 1 to 10.",
+            "pause_after_seconds": 30
+        },
+        {
+            "speaker": "clerk",
+            "text": "Good morning, Patchlight Textile Repairs. This is Rowan speaking. How can I help you today?",
+            "pause_after_seconds": 1
+        },
+        {
+            "speaker": "customer",
+            "text": "Hello. I've received a quilt from my aunt, and I'd like to use it rather than keep it in a cupboard. One corner is torn, and some of the stitching has come loose. Do you deal with things like that, or only clothing?",
+            "pause_after_seconds": 1
+        },
+        {
+            "speaker": "clerk",
+            "text": "We certainly repair quilts. We'll need to see it before we can promise anything, but those sound like fairly ordinary problems. First, could I take your surname for the booking?",
+            "pause_after_seconds": 1
+        },
+        {
+            "speaker": "customer",
+            "text": "It's Venn. That's V, E, N, N. People sometimes hear Wren over the phone, so I always spell it. My first name is Alice.",
+            "pause_after_seconds": 1
+        },
+        {
+            "speaker": "clerk",
+            "text": "Thank you, Alice. Do you know what the main fabric is? We handle different materials in separate work areas.",
+            "pause_after_seconds": 1
+        },
+        {
+            "speaker": "customer",
+            "text": "I thought it might be silk because the surface is quite smooth, but I've found the original label. It says cotton. The filling isn't mentioned, though. Is that a problem?",
+            "pause_after_seconds": 1
+        },
+        {
+            "speaker": "clerk",
+            "text": "No, we can look at that when you bring it in. Roughly how old is the quilt? I don't need an exact year.",
+            "pause_after_seconds": 1
+        },
+        {
+            "speaker": "customer",
+            "text": "My aunt made it when I was a child. She gave it to me thirty years later, which was last year. So it's thirty-one years old now. I've only recently had enough space to spread it out properly.",
+            "pause_after_seconds": 1
+        },
+        {
+            "speaker": "clerk",
+            "text": "And how big is it? That helps us reserve a suitable table. Some of the family quilts we receive are much larger than a normal bed covering.",
+            "pause_after_seconds": 1
+        },
+        {
+            "speaker": "customer",
+            "text": "I've measured the width, which is one hundred and forty centimetres. I started from the edge of the patterned centre at first and got one hundred and twenty, but that left out the border. One hundred and forty is the full width. I haven't measured the length.",
+            "pause_after_seconds": 1
+        },
+        {
+            "speaker": "clerk",
+            "text": "That's fine. We'd normally suggest a discreet repair, using cloth close to the original colour. Or we can make a visible patch that becomes part of the design. Which would you prefer?",
+            "pause_after_seconds": 1
+        },
+        {
+            "speaker": "customer",
+            "text": "A visible one, please. There's already a patch my aunt added, and I like seeing how the quilt has changed. I'd rather not pretend the damage never happened.",
+            "pause_after_seconds": 1
+        },
+        {
+            "speaker": "clerk",
+            "text": "That gives our repairer some freedom. We won't do anything until you've agreed to the design. You can look at samples here, and we'll send a photograph if we suggest a different material later. How will you bring the quilt to us?",
+            "pause_after_seconds": 1
+        },
+        {
+            "speaker": "customer",
+            "text": "I'll come by bus, so I need to fold it. Should I put it in a plastic bag in case it rains?",
+            "pause_after_seconds": 1
+        },
+        {
+            "speaker": "clerk",
+            "text": "A waterproof outer bag is sensible, but wrap the quilt itself in a towel first. That stops the weakened fabric rubbing against the bag. Please don't wash it before the appointment; we'll assess that here.",
+            "pause_after_seconds": 1
+        },
+        {
+            "speaker": "customer",
+            "text": "All right. I saw a twenty-pound consultation fee on a leaflet. Is that still right?",
+            "pause_after_seconds": 1
+        },
+        {
+            "speaker": "clerk",
+            "text": "That was last year's price. The consultation is twenty-four pounds now. It's separate from the repair charge, but we'll give you a written estimate before you commit. You pay the consultation fee when you arrive, and you don't have to decide about the repair that day.",
+            "pause_after_seconds": 1
+        },
+        {
+            "speaker": "customer",
+            "text": "That's reasonable. I can come on Thursday, although I'd prefer an afternoon appointment if there's one available.",
+            "pause_after_seconds": 1
+        },
+        {
+            "speaker": "clerk",
+            "text": "We have eleven in the morning or two thirty in the afternoon on Thursday. The later slot gives us a full half hour before the next customer.",
+            "pause_after_seconds": 1
+        },
+        {
+            "speaker": "customer",
+            "text": "Two thirty, please. I won't be rushing then.",
+            "pause_after_seconds": 1
+        },
+        {
+            "speaker": "clerk",
+            "text": "Booked. Our front entrance has building work outside it, so please use the side entrance. There's a sign on the pavement. The rear door is for deliveries and stays locked from outside.",
+            "pause_after_seconds": 1
+        },
+        {
+            "speaker": "customer",
+            "text": "Thanks for warning me. Will the booking confirmation come by text? I sometimes miss those on my old phone.",
+            "pause_after_seconds": 1
+        },
+        {
+            "speaker": "clerk",
+            "text": "We usually send one, but I can email it instead. The email includes a small map and the appointment details.",
+            "pause_after_seconds": 1
+        },
+        {
+            "speaker": "customer",
+            "text": "Email would be much better. I'll give you the address now, and then I can check the map before I set off.",
+            "pause_after_seconds": 1
+        },
+        {
+            "speaker": "narrator",
+            "text": "That is the end of Part 1. You now have thirty seconds to check your answers.",
+            "pause_after_seconds": 30
+        }
+    ]
+}
