@@ -131,6 +131,7 @@ class FilePlan:
     turn_speeds: tuple[tuple[int, float], ...] = ()
     turn_pauses: tuple[tuple[int, float], ...] = ()
     sentence_pause_seconds: float = 0
+    speaker_providers: tuple[tuple[str, str], ...] = ()
     resolved_after_pauses: tuple[float, ...] = field(init=False)
 
     def __post_init__(self) -> None:
@@ -450,7 +451,8 @@ def preflight(
             choice = providers.get(item.provider_id)
             if choice is None:
                 raise ValueError("Select an available provider.")
-            if plan.offline and choice.online:
+            cast_choices = resolve_cast_choices(item, choices)
+            if plan.offline and any(c.online for c in cast_choices.values()):
                 raise ValueError("Fully offline mode requires a local TTS provider.")
             _validate_scoped_settings(item, item.source.document)
             document = resolved_document(item)
@@ -459,9 +461,24 @@ def preflight(
             if set(dict(item.cast)) != {speaker.id for speaker in document.speakers}:
                 raise ValueError("Cast must include exactly the declared speaker IDs.")
             resolved = resolve_document(
-                document, choice, current=dict(item.cast), job_speed=item.speed
+                document,
+                choice,
+                current=dict(item.cast),
+                job_speed=item.speed,
+                speaker_choices=cast_choices,
             )
             messages.extend(diagnostic.message for diagnostic in resolved.errors)
+            for speaker, value in item.speaker_speeds:
+                if not cast_choices[speaker].supports_speed and value is not None:
+                    raise ValueError(f"{speaker}: provider does not support speed.")
+            for index, value in item.turn_speeds:
+                speaker = document.segments[index - 1].speaker
+                if not cast_choices[speaker].supports_speed and value is not None:
+                    raise ValueError(f"Turn {index}: provider does not support speed.")
+            if item.speed is not None and any(
+                not cast_choices[s.speaker].supports_speed for s in document.segments
+            ):
+                raise ValueError("Job speed is unsupported by an affected provider.")
             for scope in item.scene.phone:
                 if (
                     scope.speaker not in dict(item.cast)
@@ -502,6 +519,13 @@ def preflight(
 
 def plan_settings(item: FilePlan) -> dict[str, object]:
     """Return safe reusable settings without source text, prompts or credentials."""
+    providers = dict(item.speaker_providers)
+    voices: dict[str, str | dict[str, str]] = {}
+    for speaker, voice in item.cast:
+        if speaker in providers:
+            voices[speaker] = {"provider": providers[speaker], "voice": voice}
+        else:
+            voices[speaker] = voice
     speeds = dict(item.turn_speeds)
     pauses = dict(item.turn_pauses)
     turns = []
@@ -514,7 +538,7 @@ def plan_settings(item: FilePlan) -> dict[str, object]:
         turns.append(turn)
     return {
         "provider": item.provider_id,
-        "voices": dict(item.cast),
+        "voices": voices,
         "speed": item.speed,
         "speaker_speeds": dict(item.speaker_speeds),
         "turns": turns,
@@ -528,6 +552,27 @@ def plan_settings(item: FilePlan) -> dict[str, object]:
             "cues": [asdict(cue) for cue in item.scene.cues],
         },
     }
+
+
+def resolve_cast_choices(
+    item: FilePlan, choices: tuple[ProviderChoice, ...]
+) -> dict[str, ProviderChoice]:
+    """Resolve exact provider overrides, retaining the conversation default."""
+    providers = {choice.provider_id: choice for choice in choices}
+    overrides = dict(item.speaker_providers)
+    document = item.source.document
+    if document is None:
+        raise ValueError("A valid conversation is required.")
+    speakers = {speaker.id for speaker in document.speakers}
+    if len(overrides) != len(item.speaker_providers) or overrides.keys() - speakers:
+        raise ValueError("Provider overrides require unique known speaker IDs.")
+    result = {}
+    for speaker in document.speakers:
+        provider_id = overrides.get(speaker.id, item.provider_id)
+        if provider_id not in providers:
+            raise ValueError(f"Unknown provider {provider_id} for {speaker.id}.")
+        result[speaker.id] = providers[provider_id]
+    return result
 
 
 def _validate_scoped_settings(item: FilePlan, document: ConversationDocument) -> None:

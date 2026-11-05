@@ -29,12 +29,16 @@ class ProviderChoice:
 
 
 class ProviderManager:
-    """Keep one selected provider session and release unused local models."""
+    """Keep one desktop session, or retain CLI cast sessions until close."""
 
-    def __init__(self, models: ModelManager | None = None) -> None:
+    def __init__(
+        self, models: ModelManager | None = None, *, retain_sessions: bool = False
+    ) -> None:
         self.models = models if models is not None else ModelManager()
         self._selected: TTSProvider | None = None
         self._lock = threading.Lock()
+        self._retain_sessions = retain_sessions
+        self._sessions: dict[str, TTSProvider] = {}
 
     def list_choices(self) -> tuple[ProviderChoice, ...]:
         """Describe choices without opening model files or importing optional runtimes."""
@@ -102,6 +106,8 @@ class ProviderManager:
     def get(self, provider_id: str) -> TTSProvider:
         """Resolve a verified model-backed provider; call outside the UI thread."""
         with self._lock:
+            if self._retain_sessions and provider_id in self._sessions:
+                return self._sessions[provider_id]
             if self._selected is not None and self._selected.provider_id == provider_id:
                 return self._selected
             if provider_id == "edge":
@@ -127,14 +133,27 @@ class ProviderManager:
                         self._piper_models(),
                         validate_installation=self._check_piper_installation,
                     )
-            if self._selected is not None:
+            if self._selected is not None and not self._retain_sessions:
                 self._selected.close()
             self._selected = provider
+            if self._retain_sessions:
+                self._sessions[provider_id] = provider
             return provider
 
     def close(self) -> None:
         """Release the selected model session after any current inference finishes."""
         with self._lock:
-            if self._selected is not None:
-                self._selected.close()
-                self._selected = None
+            sessions = list(self._sessions.values())
+            if self._selected is not None and not self._retain_sessions:
+                sessions.append(self._selected)
+            self._selected = None
+            self._sessions.clear()
+            failures = []
+            for provider in sessions:
+                try:
+                    provider.close()
+                except Exception as error:
+                    # Every retained engine must release even if one close fails.
+                    failures.append(error)
+            if failures:
+                raise failures[0]

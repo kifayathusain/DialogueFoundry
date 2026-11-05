@@ -78,6 +78,7 @@ class ResolvedSegmentMetadata:
     speed_source: str
     pause_after_seconds: float
     direction_status: str
+    provider_id: str = ""
 
 
 @dataclass
@@ -223,13 +224,30 @@ async def generate_processed_conversation(
     resolved_segments: tuple[ResolvedSegment, ...] | None = None,
     document_hash: str | None = None,
     segment_treatments: dict[int, AudioTreatment] | None = None,
+    segment_providers: dict[int, TTSProvider] | None = None,
 ) -> Path:
     """Generate an isolated, tracked job with complete ordered lossless chunks."""
     token = cancellation_token or CancellationToken()
     token.raise_if_cancelled()
-    chunks = chunk_conversation(
-        lines, settings, provider.get_capabilities().max_text_characters
-    )
+    engines = segment_providers or {line.index: provider for line in lines}
+    chunks_list = []
+    native_formats = {}
+    for line in lines:
+        engine = engines[line.index]
+        capabilities = engine.get_capabilities()
+        if segment_providers is None:
+            native_formats[line.index] = native_format
+        elif "wav" in capabilities.audio_formats:
+            native_formats[line.index] = "wav"
+        elif "mp3" in capabilities.audio_formats:
+            native_formats[line.index] = "mp3"
+        else:
+            raise ValueError("This pipeline requires native MP3 or WAV segments.")
+        for chunk in chunk_conversation(
+            [line], settings, capabilities.max_text_characters
+        ):
+            chunks_list.append(replace(chunk, index=len(chunks_list) + 1))
+    chunks = tuple(chunks_list)
     if export_settings is not None:
         validate_export_target(final_audio, export_settings)
     elif final_audio.suffix.lower() not in {".mp3", ".wav"}:
@@ -245,11 +263,11 @@ async def generate_processed_conversation(
         ):
             raise ValueError("Treatments must reference known structured segments.")
     for chunk in chunks:
-        provider.validate_configuration(
+        engines[chunk.dialogue_index].validate_configuration(
             SynthesisRequest(
                 chunk.text,
                 chunk.voice_id,
-                audio_format=native_format,
+                audio_format=native_formats[chunk.dialogue_index],
                 speed=effective_speeds.get(chunk.dialogue_index, speed),
             )
         )
@@ -271,12 +289,16 @@ async def generate_processed_conversation(
                 item.speed_source,
                 item.pause_after_seconds,
                 item.direction_status,
+                item.provider_id,
             )
             for item in resolved_segments
         ]
         record.assignment_sha256 = _text_digest(
             json.dumps(
-                {item.speaker_id: item.voice_id for item in resolved_segments},
+                {
+                    item.speaker_id: (item.provider_id, item.voice_id)
+                    for item in resolved_segments
+                },
                 sort_keys=True,
             )
         )
@@ -333,12 +355,20 @@ async def generate_processed_conversation(
             output = job_directory / item.output_filename
             await _synthesize_chunk(
                 chunk,
-                provider,
-                native_format,
+                engines[chunk.dialogue_index],
+                native_formats[chunk.dialogue_index],
                 output,
                 token,
                 effective_speeds.get(chunk.dialogue_index, speed),
             )
+            if segment_providers is not None:
+                # Effects and silence use a common PCM layout across engines.
+                await run_blocking_work(
+                    partial(
+                        audio_combiner.decode_to_wav, output, output, sample_rate=24000
+                    ),
+                    token,
+                )
             treatment = (segment_treatments or {}).get(chunk.dialogue_index)
             if treatment is not None:
                 # Incidental cues occur once per turn, even for chunked speech.

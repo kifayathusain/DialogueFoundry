@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "offline": true,
+  "speaker_preferences": {
+    "host": {"locale": "en-GB", "required": true},
+    "guest": {"locale": "en-US", "required": true}
+  },
+  "casting_notes": {
+    "host": "Catalog confirms en-GB; authoritative delivery is a judgment call.",
+    "guest": "Catalog confirms en-US; warm delivery is a judgment call."
+  },
+  "settings": {
+    "provider": "kokoro",
+    "voices": {
+      "host": {"provider": "kokoro", "voice": "bm_george"},
+      "guest": {"provider": "piper", "voice": "en_US-lessac-low"}
+    },
+    "speed": null,
+    "timing": {"mode": "natural", "minimum": 0.12, "maximum": 0.45},
+    "scene": {
+      "phone": [{"speaker": "guest", "start": 1, "end": 4}],
+      "room_level": 0,
+      "cues": []
+    }
+  },
+  "export": {"sample_rate": 32000, "channels": 1, "normalize": false}
+}

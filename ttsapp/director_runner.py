@@ -15,6 +15,7 @@ from .director import (
     FilePlan,
     plan_settings,
     preflight,
+    resolve_cast_choices,
     resolved_document,
     treatments,
 )
@@ -68,26 +69,26 @@ def verify_assets(
         if item.skipped or errors[file_id]:
             continue
         try:
-            provider = providers.get(item.provider_id)
-            capabilities = provider.get_capabilities()
-            if plan.offline and capabilities.online:
-                raise ValueError("Offline mode requires a local provider.")
-            choice = next(
-                choice for choice in choices if choice.provider_id == item.provider_id
-            )
+            cast_choices = resolve_cast_choices(item, choices)
+            choice = next(iter(cast_choices.values()))
             resolved = resolve_document(
                 resolved_document(item),
                 choice,
                 current=dict(item.cast),
                 job_speed=item.speed,
+                speaker_choices=cast_choices,
             )
             checked = set()
-            native = "wav" if "wav" in capabilities.audio_formats else "mp3"
             for segment in resolved.segments:
                 token.raise_if_cancelled()
-                identity = segment.voice_id, segment.speed
+                identity = segment.provider_id, segment.voice_id, segment.speed
                 if identity in checked:
                     continue
+                provider = providers.get(segment.provider_id)
+                capabilities = provider.get_capabilities()
+                if plan.offline and capabilities.online:
+                    raise ValueError("Offline mode requires a local provider.")
+                native = "wav" if "wav" in capabilities.audio_formats else "mp3"
                 provider.validate_configuration(
                     SynthesisRequest(
                         "Voice readiness check.",
@@ -119,8 +120,15 @@ async def render_file(
     token.raise_if_cancelled()
     document = resolved_document(item)
     effects = treatments(item)
-    provider = providers.get(item.provider_id)
-    if plan.offline and provider.get_capabilities().online:
+    cast_choices = resolve_cast_choices(item, providers.list_choices())
+    speaker_providers = {
+        speaker: providers.get(choice.provider_id)
+        for speaker, choice in cast_choices.items()
+    }
+    provider = next(iter(speaker_providers.values()))
+    if plan.offline and any(
+        p.get_capabilities().online for p in speaker_providers.values()
+    ):
         raise ValueError("Fully offline mode requires a local synthesis provider.")
     destination = plan.output_folder / item.destination_name
     settings = export_settings or ExportSettings(
@@ -148,8 +156,11 @@ async def render_file(
         return await generate_conversation(
             document=document,
             voice_assignments=dict(item.cast),
-            provider_id=item.provider_id,
+            provider_id=provider.provider_id,
             provider=provider,
+            speaker_providers=speaker_providers
+            if len({p.provider_id for p in speaker_providers.values()}) > 1
+            else None,
             speed=item.speed,
             text_settings=TextProcessingSettings(
                 sentence_pause_seconds=item.sentence_pause_seconds,

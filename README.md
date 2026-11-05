@@ -121,6 +121,11 @@ python main.py --input docs/tts-sample.json --input-format json --provider edge 
 python main.py --input dialogue.json --voice-map voices.json --output dialogue.m4a --overwrite
 ```
 
+Audio Director can cast each speaker independently across Kokoro, Piper and Edge
+in one conversation, with discovery, a reviewable validated plan and no extra
+in-app LLM call. See the [copyable mixed-provider example and reusable Codex
+prompt](examples/audio_director/README.md).
+
 Mappings, speed validation, exact after-pauses and exports use the same service as
 the desktop. New explicit CLI exports refuse replacement without `--overwrite`.
 See [projects, presets and CLI contracts](docs/PROJECTS_AND_CLI.md). The commands

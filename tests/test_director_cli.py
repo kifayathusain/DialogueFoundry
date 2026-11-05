@@ -16,7 +16,9 @@ EXAMPLE = Path("examples/audio_director")
 def job(tmp_path, monkeypatch):
     providers = Providers()
     providers.close = lambda: None
-    monkeypatch.setattr(director_cli, "ProviderManager", lambda models: providers)
+    monkeypatch.setattr(
+        director_cli, "ProviderManager", lambda models, **kwargs: providers
+    )
     raw = json.loads((EXAMPLE / "telephone.direction.json").read_text())
     raw["settings"]["provider"] = providers.provider.provider_id
     direction = tmp_path / "direction.json"

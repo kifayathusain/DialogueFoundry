@@ -49,6 +49,7 @@ async def generate_conversation(
     document: ConversationDocument | None = None,
     voice_assignments: dict[str, str] | None = None,
     segment_treatments: dict[int, AudioTreatment] | None = None,
+    speaker_providers: dict[str, TTSProvider] | None = None,
 ) -> Path:
     """Run the full pipeline: parse -> synthesize each line -> combine audio.
 
@@ -68,6 +69,8 @@ async def generate_conversation(
         validate_export_target(final_audio, export_settings)
 
     resolved_segments = None
+    if speaker_providers is not None and document is None:
+        raise ValueError("Speaker providers require a structured document.")
     if segment_treatments is not None and document is None:
         raise ValueError("Segment treatments require a structured document.")
     if document is not None:
@@ -76,6 +79,18 @@ async def generate_conversation(
                 "Choose a document or an explicit text/file source, not both."
             )
         capabilities = selected_provider.get_capabilities()
+        speaker_choices = {}
+        for speaker, engine in (speaker_providers or {}).items():
+            if speaker not in {s.id for s in document.speakers}:
+                raise ValueError(f"Unknown speaker provider assignment: {speaker}.")
+            controls = engine.get_capabilities()
+            speaker_choices[speaker] = ProviderChoice(
+                engine.provider_id,
+                engine.display_name,
+                engine.get_available_voices(),
+                controls.online,
+                controls.supports_speed,
+            )
         preflight = resolve_document(
             document,
             ProviderChoice(
@@ -87,6 +102,7 @@ async def generate_conversation(
             ),
             current=voice_assignments,
             job_speed=speed,
+            speaker_choices=speaker_choices,
         )
         if preflight.errors:
             raise DocumentValidationError(preflight.errors)
@@ -132,6 +148,14 @@ async def generate_conversation(
             resolved_segments=resolved_segments,
             document_hash=document.content_hash if document is not None else None,
             segment_treatments=segment_treatments,
+            segment_providers={
+                segment.index: (speaker_providers or {}).get(
+                    segment.speaker_id, selected_provider
+                )
+                for segment in resolved_segments or ()
+            }
+            if speaker_providers is not None
+            else None,
         )
     for line in lines:
         selected_provider.validate_configuration(

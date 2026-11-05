@@ -34,6 +34,7 @@ class ResolvedSegment:
     speed_source: str
     pause_after_seconds: float
     direction_status: str
+    provider_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -119,6 +120,7 @@ def resolve_document(
     locale: str = "en-US",
     file_present: Callable[[str], bool] | None = None,
     job_speed: float | None = None,
+    speaker_choices: Mapping[str, ProviderChoice] | None = None,
 ) -> Preflight:
     """Resolve without loading models, discovery, downloads or widgets.
 
@@ -130,9 +132,10 @@ def resolve_document(
     preferences = preferences or {}
     diagnostics = list(document.diagnostics)
     used = {segment.speaker for segment in document.segments}
-    known = {voice.voice_id: voice for voice in choice.voices}
+    default_choice = choice
+    speaker_choices = speaker_choices or {}
     assignments = []
-    selected: Counter[str] = Counter()
+    selected: Counter[tuple[str, str]] = Counter()
 
     def valid(voice: str) -> bool:
         return bool(voice.strip()) and (choice.provider_id == "edge" or voice in known)
@@ -143,6 +146,8 @@ def resolve_document(
         )
 
     for index, speaker in enumerate(document.speakers):
+        choice = speaker_choices.get(speaker.id, default_choice)
+        known = {voice.voice_id: voice for voice in choice.voices}
         path = f"$.speakers[{index}]"
         voice_id = ""
         origin = "catalog"
@@ -180,7 +185,7 @@ def resolve_document(
                             and item[1].model_id
                             and file_present(item[1].model_id)
                         ),
-                        selected[item[1].voice_id] > 0,
+                        selected[choice.provider_id, item[1].voice_id] > 0,
                         item[0],
                     ),
                 )
@@ -206,11 +211,13 @@ def resolve_document(
         assignments.append(
             VoiceAssignment(speaker.id, choice.provider_id, voice_id, origin, readiness)
         )
-        selected[voice_id] += 1
-    for voice, count in selected.items():
+        selected[choice.provider_id, voice_id] += 1
+    for (provider_id, voice), count in selected.items():
         if voice and count > 1:
             roles = ", ".join(
-                item.speaker_id for item in assignments if item.voice_id == voice
+                item.speaker_id
+                for item in assignments
+                if item.voice_id == voice and item.provider_id == provider_id
             )
             warn(
                 "shared_voice",
@@ -221,6 +228,7 @@ def resolve_document(
     speakers = {speaker.id: speaker for speaker in document.speakers}
     segments = []
     for index, segment in enumerate(document.segments, 1):
+        choice = speaker_choices.get(segment.speaker, default_choice)
         role = speakers[segment.speaker]
         speed = None
         source = "provider"
@@ -268,6 +276,7 @@ def resolve_document(
                 source,
                 segment.pause_after_seconds,
                 direction,
+                choice.provider_id,
             )
         )
     return Preflight(
