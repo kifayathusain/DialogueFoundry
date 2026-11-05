@@ -1,0 +1,3 @@
+Receptionist: Welcome to the fictional observatory. How can I help?
+Caller: I would like to hear about tonight's moon viewing.
+Receptionist: Bring a warm coat, and enjoy the stars.

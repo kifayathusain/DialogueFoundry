@@ -80,7 +80,7 @@ def metadata(tmp_path):
 
 
 def test_sample_exact_pauses_and_only_dialogue(tmp_path, captured_export):
-    doc = load_document(Path("docs/tts-sample.json"))
+    doc = load_document(Path("examples/structured/tts-sample.json"))
     provider = StructuredProvider()
     progress = []
     asyncio.run(

@@ -10,6 +10,15 @@ build/
 dist/
 
 .build-venv/
-docs
+/docs/
 /AGENTS.md
 /conversation.mp3
+
+# Local environments, review records, and assistant configuration.
+/.venv-backup/
+/.venv-tts-plugin/
+/.cli-check-*/
+/.agents/
+/.codex/
+/examples/audio_director/README.md
+/examples/audio_director/MIXED_PROVIDER_VERIFICATION.md

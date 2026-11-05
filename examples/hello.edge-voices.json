@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "provider_id": "edge",
+  "voices": {"guide": "en-GB-SoniaNeural", "visitor": "en-GB-RyanNeural"}
+}

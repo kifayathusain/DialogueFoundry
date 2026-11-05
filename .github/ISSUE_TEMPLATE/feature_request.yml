@@ -1,0 +1,23 @@
+name: Feature request
+description: Suggest an improvement to DialogueFoundry.
+title: "[Feature] "
+body:
+  - type: markdown
+    attributes:
+      value: "Use fictional examples. Do not include private scripts or vulnerability details."
+  - type: textarea
+    id: problem
+    attributes:
+      label: Use case and problem
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Desired behavior
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and relevant provider or workflow constraints

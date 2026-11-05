@@ -16,7 +16,7 @@ def arguments(tmp_path, *extra):
     return cli.argument_parser().parse_args(
         [
             "--input",
-            "docs/tts-sample.json",
+            "examples/structured/tts-sample.json",
             "--output",
             str(tmp_path / "result.wav"),
             *extra,
@@ -40,12 +40,14 @@ def test_json_cli_uses_shared_snapshot_and_resolver(tmp_path, monkeypatch):
     assert call["provider_id"] == "edge"
     assert (
         call["document"].to_dict()
-        == load_document(Path("docs/tts-sample.json")).to_dict()
+        == load_document(Path("examples/structured/tts-sample.json")).to_dict()
     )
     assert not call["export_settings"].overwrite
     choice = source.list_choices()[0]
     a = resolve_document(call["document"], choice, current=call["voice_assignments"])
-    b = resolve_document(load_document(Path("docs/tts-sample.json")), choice)
+    b = resolve_document(
+        load_document(Path("examples/structured/tts-sample.json")), choice
+    )
     assert [(s.voice_id, s.pause_after_seconds) for s in a.segments] == [
         (s.voice_id, s.pause_after_seconds) for s in b.segments
     ]
@@ -53,7 +55,7 @@ def test_json_cli_uses_shared_snapshot_and_resolver(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("invalid", ["provider", "speaker", "local_voice", "malformed"])
 def test_invalid_cli_map_fails_before_provider_get(tmp_path, monkeypatch, invalid):
-    doc = load_document(Path("docs/tts-sample.json"))
+    doc = load_document(Path("examples/structured/tts-sample.json"))
     mapping = {
         "schema_version": 1,
         "provider_id": "edge",
@@ -104,7 +106,7 @@ def test_run_cli_error_is_nonzero_without_traceback(tmp_path, monkeypatch, capsy
         raise ValueError("Correct the voice mapping.")
 
     monkeypatch.setattr(cli, "generate_from_arguments", fail)
-    assert cli.run_cli(["--input", "docs/tts-sample.json"]) == 1
+    assert cli.run_cli(["--input", "examples/structured/tts-sample.json"]) == 1
     error = capsys.readouterr().err
     assert "Correct the voice mapping" in error
     assert "Traceback" not in error
@@ -122,7 +124,7 @@ def test_explicit_json_cli_refuses_overwrite_and_closes_session(tmp_path):
 
 
 def test_full_stable_piper_id_survives_cli_boundary(tmp_path, monkeypatch):
-    doc = load_document(Path("docs/tts-sample.json"))
+    doc = load_document(Path("examples/structured/tts-sample.json"))
     stable_id = "en_GB-vctk-medium:speaker_108"
     mapping = tmp_path / "piper.json"
     mapping.write_text(

@@ -89,7 +89,9 @@ def pump(app, timeout=5):
 
 
 def sample(app):
-    app.structured.set_document(load_document(Path("docs/tts-sample.json")))
+    app.structured.set_document(
+        load_document(Path("examples/structured/tts-sample.json"))
+    )
     app._mode_tabs.select(app.structured)
     app.structured.roles.selection_set(app.structured.document.speakers[0].id)
     app.structured.segments.selection_set("0")
@@ -194,7 +196,9 @@ def test_failed_and_stale_import_preserve_document(window, tmp_path, monkeypatch
     assert view.preflight().assignments[0].voice_id == "manual"
     revision = window._preview_revision
     window._run_import(
-        Path("docs/tts-sample.json"), revision, window._cancellation_token
+        Path("examples/structured/tts-sample.json"),
+        revision,
+        window._cancellation_token,
     )
     window._invalidate_preview()
     window._drain_queue()
