@@ -18,6 +18,7 @@ def kokoro_v1_model(model_directory: Path) -> KokoroModel:
             "en-GB" if identifier[0] == "b" else "en-US",
             "kokoro-82m-v1",
             "Apache-2.0",
+            gender="female" if identifier[1] == "f" else "male",
         )
         for identifier in default_manifest("kokoro-82m-v1").voices
     )

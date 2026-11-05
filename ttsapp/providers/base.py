@@ -16,6 +16,7 @@ class VoiceMetadata:
     language: str
     model_id: str | None = None
     license_name: str | None = None
+    gender: str | None = None
 
 
 @dataclass(frozen=True)

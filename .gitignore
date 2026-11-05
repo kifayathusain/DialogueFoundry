@@ -10,3 +10,6 @@ build/
 dist/
 
 .build-venv/
+docs
+/AGENTS.md
+/conversation.mp3

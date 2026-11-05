@@ -1,0 +1,22 @@
+{
+  "speakers": [
+    {
+      "id": "host",
+      "role": "Studio host",
+      "gender": "male",
+      "description": "An authoritative British host in the studio.",
+      "voice_defaults": {"kokoro": "bm_george"}
+    },
+    {
+      "id": "guest",
+      "role": "Remote guest",
+      "description": "A warm American guest speaking on the telephone."
+    }
+  ],
+  "segments": [
+    {"speaker": "host", "text": "Welcome. Can you hear me?", "pause_after_seconds": 0},
+    {"speaker": "guest", "text": "Yes, thank you for inviting me."},
+    {"speaker": "host", "text": "What makes a good conversation?", "pause_after_seconds": 0},
+    {"speaker": "guest", "text": "Listening, and giving each person time to answer.", "pause_after_seconds": 0.5}
+  ]
+}

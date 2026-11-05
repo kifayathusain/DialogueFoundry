@@ -32,18 +32,31 @@ from .config import (
     DEFAULT_OUTPUT_DIR,
     VOICES,
 )
+from .conversation_document import ConversationDocument, load_document, save_document_as
 from .desktop_options import (
     DesktopGenerationOptions,
     build_desktop_options,
     build_export_settings,
     filter_voice_choices,
 )
+from .director_gui import AudioDirectorWindow
 from .model_library import ModelLibraryWindow
 from .parser import ConversationLine
 from .preview import PreviewService, WindowsAudioPlayer, strip_speaker_labels
+from .project_storage import (
+    ProjectSnapshot,
+    load_project,
+    new_project,
+    preset_from_data,
+    read_json_file,
+    save_preset,
+    save_project,
+)
 from .provider_manager import ProviderManager
 from .providers.base import CancellationToken
 from .service import generate_conversation
+from .speaker_mapping import MappingState
+from .structured_editor import StructuredEditor
 from .text_processing import SpeechChunk
 from .tts_engine import TTSGenerationError
 
@@ -132,6 +145,9 @@ class _ProgressMessage:
     path: Path | None = None
     revision: int = 0
     message: str = ""
+    document: ConversationDocument | None = None
+    project: ProjectSnapshot | None = None
+    preferences: tuple[tuple[tuple[str, str, str], str], ...] = ()
 
 
 class TTSDesktopApp(tk.Tk):
@@ -143,7 +159,7 @@ class TTSDesktopApp(tk.Tk):
         super().__init__()
         self.title(APP_TITLE)
         self.geometry("800x760")
-        self.minsize(720, 620)
+        self.minsize(480, 360)
         self._provider_manager = (
             providers if providers is not None else ProviderManager()
         )
@@ -155,6 +171,11 @@ class TTSDesktopApp(tk.Tk):
             choice.display_name: choice.provider_id for choice in self._choices.values()
         }
         self._provider_id = "edge"
+        self._saved_chunk_limit = 1000
+        self._saved_export_timeout = 600.0
+        self._project_id: str | None = None
+        self._source_locator: str | None = None
+        self._source_sha256: str | None = None
         self._provider_var = tk.StringVar(value=self._choices["edge"].display_name)
         self._language_var = tk.StringVar(value="All languages")
         self._voice_search_var = tk.StringVar()
@@ -196,11 +217,50 @@ class TTSDesktopApp(tk.Tk):
         self._exporting = False
         self._build_widgets()
         self._provider_changed()
-        self._speed_var.trace_add("write", lambda *args: self._invalidate_preview())
+        for variable in (
+            self._provider_var,
+            self._language_var,
+            self._speed_var,
+            self._process_text_var,
+            self._sentence_pause_var,
+            self._paragraph_pause_var,
+            self._format_var,
+            self._bitrate_var,
+            self._sample_rate_var,
+            self._channels_var,
+            self._normalize_var,
+        ):
+            variable.trace_add("write", lambda *args: self._settings_changed())
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(self.POLL_INTERVAL_MS, self._drain_queue)
 
     def _build_widgets(self) -> None:
+        # Keep action/status controls outside the scrollable editing surface.
+        surface = ttk.Frame(self)
+        surface.pack(fill="both", expand=True)
+        canvas = tk.Canvas(surface, highlightthickness=0)
+        self._scroll_canvas = canvas
+        vertical = ttk.Scrollbar(
+            surface, orient="vertical", command=canvas.yview, takefocus=True
+        )
+        horizontal = ttk.Scrollbar(
+            self, orient="horizontal", command=canvas.xview, takefocus=True
+        )
+        canvas.configure(yscrollcommand=vertical.set, xscrollcommand=horizontal.set)
+        vertical.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+        horizontal.pack(fill="x")
+        self._content = ttk.Frame(canvas)
+        item = canvas.create_window((0, 0), window=self._content, anchor="nw")
+        self._content.bind(
+            "<Configure>",
+            lambda event: canvas.configure(scrollregion=canvas.bbox("all")),
+        )
+        canvas.bind(
+            "<Configure>",
+            lambda event: canvas.itemconfigure(item, width=max(720, event.width)),
+        )
+        self.bind("<FocusIn>", self._reveal_focus)
         self._build_text_editor()
         self._build_provider_controls()
         self._build_speaker_controls()
@@ -210,7 +270,39 @@ class TTSDesktopApp(tk.Tk):
         self._build_actions()
 
     def _build_text_editor(self) -> None:
-        toolbar = ttk.Frame(self)
+        file_bar = ttk.Frame(self._content)
+        file_bar.pack(fill="x", padx=10, pady=4)
+        ttk.Button(file_bar, text="Audio Director…", command=self._open_director).pack(
+            side="left", padx=4
+        )
+        ttk.Button(
+            file_bar, text="Open / Import", command=self._open_conversation
+        ).pack(side="left")
+        ttk.Button(file_bar, text="JSON Save As", command=self._save_json_as).pack(
+            side="left", padx=4
+        )
+        project_bar = ttk.Frame(self._content)
+        project_bar.pack(fill="x", padx=10, pady=4)
+        for label, command in (
+            ("Open project", self._open_project),
+            ("Save project As", self._save_project_as),
+            ("Save mapping preset", self._save_mapping_preset),
+            ("Apply preset", self._apply_mapping_preset),
+        ):
+            ttk.Button(project_bar, text=label, command=command).pack(
+                side="left", padx=2
+            )
+        self._mode_tabs = ttk.Notebook(self._content)
+        self._mode_tabs.pack(fill="both", expand=True, padx=10)
+        plain = ttk.Frame(self._mode_tabs)
+        self._mode_tabs.add(plain, text="Plain text")
+        self.structured = StructuredEditor(
+            self._mode_tabs, self._structured_changed, self._preview_structured
+        )
+        self._mode_tabs.add(self.structured, text="JSON")
+        self._mode_tabs.enable_traversal()
+        self._mode_tabs.bind("<<NotebookTabChanged>>", self._mode_changed)
+        toolbar = ttk.Frame(plain)
         toolbar.pack(fill="x", padx=10, pady=6)
         ttk.Label(toolbar, text="Conversation script: Speaker: text").pack(side="left")
         ttk.Button(toolbar, text="Paste", command=self._paste_text).pack(
@@ -220,7 +312,7 @@ class TTSDesktopApp(tk.Tk):
             toolbar, text="Clear", command=lambda: self.text_box.delete("1.0", "end")
         ).pack(side="left")
         ttk.Label(toolbar, textvariable=self._count_var).pack(side="right")
-        frame = ttk.Frame(self)
+        frame = ttk.Frame(plain)
         frame.pack(fill="both", expand=True, padx=10)
         self.text_box = tk.Text(frame, wrap="word", height=10, undo=True)
         scrollbar = ttk.Scrollbar(frame, command=self.text_box.yview)
@@ -230,7 +322,7 @@ class TTSDesktopApp(tk.Tk):
         self.text_box.bind("<<Modified>>", self._text_modified)
 
     def _build_provider_controls(self) -> None:
-        frame = ttk.Frame(self)
+        frame = ttk.Frame(self._content)
         frame.pack(fill="x", padx=10, pady=6)
         ttk.Label(frame, text="Provider:").pack(side="left")
         self._provider_box = ttk.Combobox(
@@ -256,10 +348,10 @@ class TTSDesktopApp(tk.Tk):
             frame, text="Model library...", command=self._open_model_library
         )
         self._model_library_button.pack(side="right")
-        ttk.Label(self, textvariable=self._provider_status, wraplength=760).pack(
-            fill="x", padx=10
-        )
-        search_frame = ttk.Frame(self)
+        ttk.Label(
+            self._content, textvariable=self._provider_status, wraplength=760
+        ).pack(fill="x", padx=10)
+        search_frame = ttk.Frame(self._content)
         search_frame.pack(fill="x", padx=10)
         ttk.Label(search_frame, text="Search voices / quality / speaker:").pack(
             side="left"
@@ -268,10 +360,12 @@ class TTSDesktopApp(tk.Tk):
             search_frame, textvariable=self._voice_search_var
         )
         self._voice_search.pack(side="left", fill="x", expand=True, padx=6)
-        self._voice_search_var.trace_add("write", lambda *args: self._filter_voices())
+        self._filter_after = None
+        self._voice_search_var.trace_add("write", lambda *args: self._schedule_filter())
 
     def _build_speaker_controls(self) -> None:
-        frame = ttk.LabelFrame(self, text="Speakers and voices")
+        frame = ttk.LabelFrame(self._content, text="Speakers and voices")
+        self._legacy_speaker_frame = frame
         frame.pack(fill="x", padx=10, pady=6)
         for index, (speaker, voice) in enumerate(VOICES.items()):
             speaker_var = tk.StringVar(value=speaker)
@@ -301,13 +395,15 @@ class TTSDesktopApp(tk.Tk):
             voice_var.trace_add("write", lambda *args: self._voice_changed())
         frame.columnconfigure(1, weight=1)
         frame.columnconfigure(2, weight=2)
-        ttk.Label(
-            self,
+        self._legacy_hint = ttk.Label(
+            self._content,
             text="Select text and click a speaker's Preview, or preview a sample (up to 400 characters).",
-        ).pack(anchor="w", padx=10)
+        )
+        self._legacy_hint.pack(anchor="w", padx=10)
 
     def _build_processing_controls(self) -> None:
-        frame = ttk.Frame(self)
+        frame = ttk.Frame(self._content)
+        self._processing_frame = frame
         frame.pack(fill="x", padx=10, pady=6)
         ttk.Label(frame, text="Speed:").pack(side="left")
         self._speed_control = ttk.Spinbox(
@@ -348,7 +444,15 @@ class TTSDesktopApp(tk.Tk):
         self._paragraph_control.pack(side="left", padx=5)
 
     def _build_export_controls(self) -> None:
-        frame = ttk.LabelFrame(self, text="Audio export")
+        self._advanced_export = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            self._content,
+            text="Advanced export options",
+            variable=self._advanced_export,
+            command=self._toggle_export_options,
+        ).pack(anchor="w", padx=10)
+        frame = ttk.LabelFrame(self._content, text="Audio export")
+        self._export_frame = frame
         frame.pack(fill="x", padx=10, pady=4)
         ttk.Label(frame, text="Format:").grid(row=0, column=0, padx=6, pady=4)
         self._format_box = ttk.Combobox(
@@ -394,6 +498,16 @@ class TTSDesktopApp(tk.Tk):
         )
         self._channels_box.grid(row=1, column=3, padx=4)
 
+        frame.pack_forget()
+
+    def _toggle_export_options(self) -> None:
+        if self._advanced_export.get():
+            self._export_frame.pack(
+                fill="x", padx=10, pady=4, before=self._output_frame
+            )
+        else:
+            self._export_frame.pack_forget()
+
     def _export_format_changed(self) -> None:
         output = self._output_path_var.get().strip() or str(
             default_desktop_output_path()
@@ -404,7 +518,8 @@ class TTSDesktopApp(tk.Tk):
         self._apply_control_states()
 
     def _build_output_controls(self) -> None:
-        frame = ttk.Frame(self)
+        frame = ttk.Frame(self._content)
+        self._output_frame = frame
         frame.pack(fill="x", padx=10, pady=6)
         ttk.Label(frame, text="Output file:").pack(side="left")
         ttk.Entry(frame, textvariable=self._output_path_var).pack(
@@ -451,6 +566,7 @@ class TTSDesktopApp(tk.Tk):
             text = self.text_box.get("1.0", "end-1c")
             self._count_var.set(f"{len(text.split())} words · {len(text)} characters")
             self.text_box.edit_modified(False)
+            self._invalidate_preview()
 
     def _paste_text(self) -> None:
         try:
@@ -459,6 +575,13 @@ class TTSDesktopApp(tk.Tk):
             self._status_var.set("The clipboard does not contain text.")
 
     def _provider_changed(self) -> None:
+        if (
+            "structured" in self.__dict__
+            and self.structured.pending_role
+            and not self.structured.apply_role()
+        ):
+            self._provider_var.set(self._choices[self._provider_id].display_name)
+            return
         if self._provider_id == "edge":
             self._edge_processing = self._process_text_var.get()
         self._voice_selections[self._provider_id] = tuple(
@@ -489,8 +612,36 @@ class TTSDesktopApp(tk.Tk):
             )
         self._apply_control_states()
         self._invalidate_preview()
+        self._sync_structured_provider()
+
+    def _schedule_filter(self) -> None:
+        if self._filter_after is not None:
+            self.after_cancel(self._filter_after)
+        self._filter_after = self.after(150, self._filter_voices)
+
+    def _reveal_focus(self, event: tk.Event) -> None:
+        widget = event.widget
+        ancestor = widget
+        while ancestor is not None and ancestor is not self._content:
+            ancestor = getattr(ancestor, "master", None)
+        if ancestor is None:
+            return
+        canvas = self._scroll_canvas
+        width = max(1, self._content.winfo_width())
+        height = max(1, self._content.winfo_height())
+        x = widget.winfo_rootx() - self._content.winfo_rootx()
+        y = widget.winfo_rooty() - self._content.winfo_rooty()
+        if y < canvas.canvasy(0) or y + widget.winfo_height() > canvas.canvasy(
+            canvas.winfo_height()
+        ):
+            canvas.yview_moveto(max(0, y - 10) / height)
+        if x < canvas.canvasx(0) or x + widget.winfo_width() > canvas.canvasx(
+            canvas.winfo_width()
+        ):
+            canvas.xview_moveto(max(0, x - 10) / width)
 
     def _filter_voices(self) -> None:
+        self._filter_after = None
         choice = self._choices[self._provider_id]
         language = self._language_var.get()
         values = tuple(
@@ -501,6 +652,7 @@ class TTSDesktopApp(tk.Tk):
         )
         for box in self._voice_boxes:
             box.configure(values=values)
+        self._sync_structured_provider(values)
 
     def _voice_changed(self) -> None:
         """Describe selected assets cheaply; full verification happens in workers."""
@@ -552,10 +704,15 @@ class TTSDesktopApp(tk.Tk):
         self._speed_control.configure(
             state=state if choice.supports_speed else "disabled"
         )
-        self._process_control.configure(state=state if choice.online else "disabled")
-        processing = self._process_text_var.get() or not choice.online
-        for control in (self._sentence_control, self._paragraph_control):
-            control.configure(state=state if processing else "disabled")
+        json_mode = "structured" in self.__dict__ and self._json_mode()
+        self._process_control.configure(
+            state=state if choice.online and not json_mode else "disabled"
+        )
+        processing = json_mode or self._process_text_var.get() or not choice.online
+        self._sentence_control.configure(state=state if processing else "disabled")
+        self._paragraph_control.configure(
+            state=state if processing and not json_mode else "disabled"
+        )
         self._replay_button.configure(
             state=state if self._last_preview is not None else "disabled"
         )
@@ -572,7 +729,8 @@ class TTSDesktopApp(tk.Tk):
         return build_desktop_options(
             self._choices[self._provider_id],
             self._speed_var.get(),
-            self._process_text_var.get(),
+            self._process_text_var.get()
+            or ("structured" in self.__dict__ and self._json_mode()),
             self._sentence_pause_var.get(),
             self._paragraph_pause_var.get(),
         )
@@ -586,6 +744,17 @@ class TTSDesktopApp(tk.Tk):
             self._channels_var.get(),
             self._normalize_var.get(),
         )
+        if "structured" in self.__dict__ and self._json_mode():
+            from .text_processing import TextProcessingSettings
+
+            processing = options.text_settings or TextProcessingSettings()
+            options = replace(
+                options,
+                text_settings=replace(
+                    processing, max_chunk_characters=self._saved_chunk_limit
+                ),
+            )
+            settings = replace(settings, timeout_seconds=self._saved_export_timeout)
         return replace(options, export_settings=settings)
 
     def _open_model_library(self) -> None:
@@ -597,6 +766,16 @@ class TTSDesktopApp(tk.Tk):
             self._model_library.bind("<Destroy>", self._library_closed, add="+")
         else:
             self._model_library.lift()
+
+    def _open_director(self) -> None:
+        if self._worker is not None and self._worker.is_alive():
+            self._status_var.set("Finish or cancel the current operation first.")
+            return
+        existing = getattr(self, "_director", None)
+        if existing is not None and existing.winfo_exists():
+            existing.lift()
+            return
+        self._director = AudioDirectorWindow(self)
 
     def _library_closed(self, event: tk.Event) -> None:
         """Refresh asset presence after the library's worker has finished cleanup."""
@@ -646,7 +825,386 @@ class TTSDesktopApp(tk.Tk):
         )
         self.progress_bar.configure(value=0, maximum=1)
 
+    def _mode_changed(self, event: tk.Event) -> None:
+        self._invalidate_preview()
+        self._apply_control_states()
+        if self._json_mode():
+            self._legacy_speaker_frame.pack_forget()
+            self._legacy_hint.pack_forget()
+        else:
+            self._legacy_speaker_frame.pack(
+                fill="x", padx=10, pady=6, before=self._processing_frame
+            )
+            self._legacy_hint.pack(anchor="w", padx=10, before=self._processing_frame)
+
+    def _json_mode(self) -> bool:
+        return self._mode_tabs.select() == str(self.structured)
+
+    def _settings_changed(self) -> None:
+        self._invalidate_preview()
+        if self.structured.document is not None:
+            self.structured.dirty = True
+
+    def _structured_changed(self) -> None:
+        self._invalidate_preview()
+
+    def _sync_structured_provider(
+        self, suggestions: tuple[str, ...] | None = None
+    ) -> None:
+        if "structured" not in self.__dict__:
+            return
+        choice = self._choices[self._provider_id]
+        try:
+            speed = float(self._speed_var.get()) if choice.supports_speed else None
+        except ValueError:
+            speed = None
+        locale = self._language_var.get()
+        presence = {}
+        for model_id in {voice.model_id for voice in choice.voices if voice.model_id}:
+            model = self._provider_manager.models.manifest(model_id)
+            directory = self._provider_manager.models.model_directory(model_id)
+            presence[model_id] = all(
+                (directory / asset.filename).is_file() for asset in model.files
+            )
+        self.structured.configure_provider(
+            choice,
+            file_presence=presence,
+            locale="en-US" if locale == "All languages" else locale,
+            job_speed=speed,
+            suggestions=suggestions,
+        )
+
+    def _confirm_replace(self) -> bool:
+        if not self.structured.dirty:
+            return True
+        answer = messagebox.askyesnocancel(
+            APP_TITLE, "Save unsaved JSON changes before replacing or closing?"
+        )
+        if answer is None:
+            return False
+        if answer:
+            return self._save_project_as()
+        return True
+
+    def _open_conversation(self) -> None:
+        if self._busy or self._closing or not self._confirm_replace():
+            return
+        chosen = filedialog.askopenfilename(
+            filetypes=[("JSON conversation", "*.json"), ("Plain text", "*.txt")]
+        )
+        if not chosen:
+            return
+        self._begin_work("import")
+        self._status_var.set("Importing JSON...")
+        revision = self._preview_revision
+        token = self._cancellation_token
+        self._worker = threading.Thread(
+            target=self._run_import,
+            args=(Path(chosen), revision, token),
+            daemon=True,
+        )
+        self._worker.start()
+
+    def _run_import(
+        self,
+        source: Path,
+        revision: int,
+        token: CancellationToken,
+        kind: str = "document",
+    ) -> None:
+        try:
+            token.raise_if_cancelled()
+            if kind == "project":
+                project = load_project(source)
+                token.raise_if_cancelled()
+                self._queue.put(
+                    _ProgressMessage(
+                        "project_ready", revision=revision, project=project
+                    )
+                )
+                return
+            if kind == "preset":
+                preferences = preset_from_data(read_json_file(source))
+                token.raise_if_cancelled()
+                self._queue.put(
+                    _ProgressMessage(
+                        "preset_ready",
+                        revision=revision,
+                        preferences=tuple(preferences.items()),
+                    )
+                )
+                return
+            if source.suffix.lower() != ".json":
+                if source.stat().st_size > 10 * 1024 * 1024:
+                    raise ValueError("Text input exceeds the 10 MiB limit.")
+                text = source.read_text(encoding="utf-8-sig")
+                token.raise_if_cancelled()
+                self._queue.put(
+                    _ProgressMessage("text_ready", revision=revision, message=text)
+                )
+                return
+            document = load_document(source)
+            token.raise_if_cancelled()
+            self._queue.put(
+                _ProgressMessage(
+                    "import_ready", revision=revision, document=document, path=source
+                )
+            )
+        except asyncio.CancelledError:
+            self._queue.put(_ProgressMessage("cancelled"))
+        except (OSError, ValueError) as error:
+            self._queue.put(_ProgressMessage("error", message=str(error)))
+
+    def _save_json_as(self) -> bool:
+        if self.structured.document is None:
+            return False
+        if self.structured.pending:
+            messagebox.showerror(APP_TITLE, "Apply role/segment edits before saving.")
+            return False
+        chosen = filedialog.asksaveasfilename(
+            title="Save JSON As (dialogue and source settings)",
+            defaultextension=".json",
+            filetypes=[("JSON", "*.json")],
+        )
+        if not chosen:
+            return False
+        try:
+            save_document_as(self.structured.document, Path(chosen))
+        except OSError as error:
+            messagebox.showerror(APP_TITLE, str(error))
+            return False
+        self._status_var.set(
+            "JSON saved. Active voice assignments require a project save."
+        )
+        return True
+
+    def _open_project(self) -> None:
+        self._open_data_file("project", "*.ttsproject.json")
+
+    def _apply_mapping_preset(self) -> None:
+        if self.structured.document is None:
+            return
+        self._open_data_file("preset", "*.ttspreset.json")
+
+    def _open_data_file(self, kind: str, pattern: str) -> None:
+        if self._busy or self._closing:
+            return
+        if kind == "project" and not self._confirm_replace():
+            return
+        if self.structured.pending:
+            messagebox.showerror(APP_TITLE, "Apply role/segment edits first.")
+            return
+        chosen = filedialog.askopenfilename(
+            filetypes=[(kind, pattern), ("JSON", "*.json")]
+        )
+        if not chosen:
+            return
+        self._begin_work("import")
+        self._worker = threading.Thread(
+            target=self._run_import,
+            args=(Path(chosen), self._preview_revision, self._cancellation_token, kind),
+            daemon=True,
+        )
+        self._worker.start()
+
+    def _capture_project(self) -> ProjectSnapshot:
+        if self.structured.document is None or self.structured.pending:
+            raise ValueError("Open a JSON document and apply pending edits first.")
+        options = self._read_options()
+        document = self.structured.document
+        assignments = {
+            provider: dict(voices)
+            for provider, voices in self.structured.project_assignments.items()
+        }
+        for provider in self._choices:
+            assignments.setdefault(provider, {}).update(
+                self.structured.mappings.selections(document, provider)
+            )
+        assignments.setdefault(self._provider_id, {}).update(
+            {
+                item.speaker_id: item.voice_id
+                for item in self.structured.preflight().assignments
+            }
+        )
+        project = new_project(
+            document,
+            self._provider_id,
+            assignments,
+            export_settings=options.export_settings,
+            text_settings=options.text_settings,
+            speed=options.speed,
+            locale=self._language_var.get(),
+            source_locator=self._source_locator,
+            source_sha256=self._source_sha256,
+        )
+        if self._project_id is not None:
+            project = replace(project, project_id=self._project_id)
+        return project
+
+    def _save_project_as(self) -> bool:
+        try:
+            project = self._capture_project()
+            chosen = filedialog.asksaveasfilename(
+                title="Save project As",
+                defaultextension=".ttsproject.json",
+                filetypes=[("TTS project", "*.ttsproject.json")],
+            )
+            if not chosen:
+                return False
+            save_project(project, Path(chosen))
+        except (OSError, ValueError) as error:
+            messagebox.showerror(APP_TITLE, str(error))
+            return False
+        self._project_id = project.project_id
+        self.structured.dirty = False
+        self._status_var.set(
+            "Project saved with embedded dialogue, mappings and settings."
+        )
+        return True
+
+    def _adopt_project(self, project: ProjectSnapshot) -> None:
+        self.structured.mappings = MappingState()
+        self.structured.preferences = {}
+        self.structured.set_document(project.document)
+        self.structured.project_assignments = {
+            provider: dict(voices) for provider, voices in project.assignments.items()
+        }
+        self._project_id = project.project_id
+        self._source_locator = project.source_locator
+        self._source_sha256 = project.source_sha256
+        self._provider_var.set(self._choices[project.provider_id].display_name)
+        self._provider_changed()
+        self._language_var.set(project.locale)
+        self._saved_chunk_limit = project.text_settings.max_chunk_characters
+        self._saved_export_timeout = project.export_settings.timeout_seconds
+        settings = project.export_settings
+        self._format_var.set(settings.audio_format.upper())
+        self._bitrate_var.set(
+            str(settings.mp3_bitrate_kbps) if settings.mp3_bitrate_kbps else "Auto"
+        )
+        self._sample_rate_var.set(
+            str(settings.sample_rate) if settings.sample_rate else "Native"
+        )
+        self._channels_var.set(
+            {None: "Source", 1: "Mono", 2: "Stereo"}[settings.channels]
+        )
+        self._normalize_var.set(settings.normalize)
+        self._speed_var.set(str(project.speed) if project.speed is not None else "1.0")
+        self._sentence_pause_var.set(str(project.text_settings.sentence_pause_seconds))
+        self._paragraph_pause_var.set(
+            str(project.text_settings.paragraph_pause_seconds)
+        )
+        self._process_text_var.set(True)
+        self._mode_tabs.select(self.structured)
+        self._sync_structured_provider()
+        self._apply_control_states()
+        self.structured.dirty = False
+        self._status_var.set(
+            "Project restored from embedded snapshot; source locator is provenance only."
+        )
+
+    def _save_mapping_preset(self) -> None:
+        if self.structured.document is None or self.structured.pending:
+            return
+        try:
+            result = self.structured.preflight()
+            voices = {item.speaker_id: item.voice_id for item in result.assignments}
+            locale = self._language_var.get()
+            if locale == "All languages":
+                locale = "en-US"
+            preferences = {
+                (speaker.role.strip().casefold(), self._provider_id, locale): voices[
+                    speaker.id
+                ]
+                for speaker in self.structured.document.speakers
+            }
+            chosen = filedialog.asksaveasfilename(
+                title="Save mapping preset",
+                defaultextension=".ttspreset.json",
+                filetypes=[("Mapping preset", "*.ttspreset.json")],
+            )
+            if chosen:
+                save_preset(preferences, Path(chosen))
+        except (OSError, ValueError) as error:
+            messagebox.showerror(APP_TITLE, str(error))
+
+    def _generate_structured(self) -> None:
+        if self._busy or self._closing:
+            return
+        try:
+            if self.structured.pending:
+                raise ValueError("Apply role/segment edits before generating.")
+            options = self._read_options()
+            self._sync_structured_provider()
+            result = self.structured.preflight()
+            if result.errors:
+                raise ValueError(
+                    "; ".join(f"{item.path}: {item.message}" for item in result.errors)
+                )
+            document = self.structured.document
+            voices = {item.speaker_id: item.voice_id for item in result.assignments}
+            final_audio = Path(self._output_path_var.get().strip())
+            if final_audio.exists():
+                if not messagebox.askyesno(
+                    APP_TITLE, "Replace the existing output audio file?"
+                ):
+                    return
+                options = replace(
+                    options,
+                    export_settings=replace(options.export_settings, overwrite=True),
+                )
+            validate_export_target(final_audio, options.export_settings)
+        except (OSError, ValueError) as error:
+            messagebox.showerror(APP_TITLE, str(error))
+            return
+        self._begin_work("generation")
+        self._worker = threading.Thread(
+            target=self._run_generation,
+            args=(
+                "",
+                final_audio.parent / DEFAULT_OUTPUT_DIR.name,
+                final_audio,
+                voices,
+                options,
+                self._cancellation_token,
+                document,
+                self._preview_revision,
+            ),
+            daemon=True,
+        )
+        self._worker.start()
+
+    def _preview_structured(self) -> None:
+        if self._busy or self._closing:
+            return
+        try:
+            if self.structured.pending:
+                raise ValueError("Apply role/segment edits before preview.")
+            self._sync_structured_provider()
+            segment = self.structured.preview_segment()
+            options = replace(self._read_voice_options(), speed=segment.speed)
+        except ValueError as error:
+            messagebox.showerror(APP_TITLE, str(error))
+            return
+        self._begin_work("preview")
+        self._status_var.set("Preview: speech only; explicit after-pauses omitted.")
+        self._worker = threading.Thread(
+            target=self._run_preview,
+            args=(
+                options,
+                segment.voice_id,
+                segment.text,
+                self._cancellation_token,
+                self._preview_revision,
+            ),
+            daemon=True,
+        )
+        self._worker.start()
+
     def _on_generate_clicked(self) -> None:
+        if "structured" in self.__dict__ and self._json_mode():
+            self._generate_structured()
+            return
         if self._closing or (self._worker is not None and self._worker.is_alive()):
             return
         script_text = self.text_box.get("1.0", "end")
@@ -694,6 +1252,9 @@ class TTSDesktopApp(tk.Tk):
         self._worker.start()
 
     def _on_preview_clicked(self, slot: int) -> None:
+        if "structured" in self.__dict__ and self._json_mode():
+            self._preview_structured()
+            return
         if self._closing or (self._worker is not None and self._worker.is_alive()):
             return
         try:
@@ -765,6 +1326,8 @@ class TTSDesktopApp(tk.Tk):
         voices: dict[str, str],
         options: DesktopGenerationOptions,
         token: CancellationToken,
+        document: ConversationDocument | None = None,
+        revision: int = 0,
     ) -> None:
         def on_progress(index: int, total: int, line: ConversationLine) -> None:
             self._queue.put(
@@ -787,7 +1350,9 @@ class TTSDesktopApp(tk.Tk):
             provider = self._provider_manager.get(options.provider_id)
             result = asyncio.run(
                 generate_conversation(
-                    input_text=script_text,
+                    input_text=script_text if document is None else None,
+                    document=document,
+                    voice_assignments=voices if document is not None else None,
                     output_dir=output_dir,
                     final_audio=final_audio,
                     voices=voices,
@@ -802,7 +1367,11 @@ class TTSDesktopApp(tk.Tk):
                     on_export_progress=on_export_progress,
                 )
             )
-            self._queue.put(_ProgressMessage("success", final_audio=result))
+            self._queue.put(
+                _ProgressMessage(
+                    "success", final_audio=result, revision=revision, document=document
+                )
+            )
         except asyncio.CancelledError:
             self._queue.put(_ProgressMessage("cancelled"))
         except Exception as error:
@@ -844,6 +1413,10 @@ class TTSDesktopApp(tk.Tk):
             self._elapsed_var.set(
                 f"Elapsed: {time.monotonic() - self._started_at:.1f} s"
             )
+        director = getattr(self, "_director", None)
+        if self._closing and director is not None and director.winfo_exists():
+            self.after(self.POLL_INTERVAL_MS, self._drain_queue)
+            return
         if self._closing and (self._worker is None or not self._worker.is_alive()):
             if not self._shutdown_started:
                 self._shutdown_started = True
@@ -857,6 +1430,51 @@ class TTSDesktopApp(tk.Tk):
         self.after(self.POLL_INTERVAL_MS, self._drain_queue)
 
     def _handle_message(self, message: _ProgressMessage) -> None:
+        if message.kind in {
+            "import_ready",
+            "text_ready",
+            "project_ready",
+            "preset_ready",
+        }:
+            self._set_busy(False)
+            if (
+                self._closing
+                or message.revision != self._preview_revision
+                or self._cancellation_token.is_cancelled
+            ):
+                self._status_var.set(
+                    "Import discarded because the active revision changed."
+                )
+                return
+            if message.kind == "project_ready":
+                self._adopt_project(message.project)
+                return
+            if message.kind == "preset_ready":
+                self.structured.preferences = dict(message.preferences)
+                self.structured.dirty = True
+                self.structured.refresh()
+                self._invalidate_preview()
+                self._status_var.set(
+                    "Preset enabled for automatic roles; manual/project choices retained."
+                )
+                return
+            if message.kind == "text_ready":
+                self.text_box.delete("1.0", "end")
+                self.text_box.insert("1.0", message.message)
+                self._mode_tabs.select(0)
+                self._status_var.set("Plain text imported.")
+                return
+            self.structured.set_document(message.document)
+            self._project_id = None
+            self._saved_chunk_limit = 1000
+            self._saved_export_timeout = 600.0
+            self._source_locator = str(message.path) if message.path else None
+            self._source_sha256 = message.document.content_hash
+            self._mode_tabs.select(self.structured)
+            self._status_var.set(
+                "JSON imported. Directions are notes; preview is speech only."
+            )
+            return
         if message.kind == "export_progress":
             if not self._exporting:
                 self.progress_bar.configure(mode="indeterminate")
@@ -881,6 +1499,14 @@ class TTSDesktopApp(tk.Tk):
         if self._closing:
             return
         if message.kind == "success":
+            if (
+                message.document is not None
+                and message.revision != self._preview_revision
+            ):
+                self._status_var.set(
+                    "Snapshot exported; current document has newer edits."
+                )
+                return
             final_audio = message.final_audio
             self._status_var.set(f"Done. Saved to: {final_audio}")
             messagebox.showinfo(APP_TITLE, f"Final audio created:\n{final_audio}")
@@ -904,11 +1530,16 @@ class TTSDesktopApp(tk.Tk):
             messagebox.showerror(APP_TITLE, message.message)
 
     def _on_close(self) -> None:
+        if "structured" in self.__dict__ and not self._confirm_replace():
+            return
         self._closing = True
         self._set_busy(True)
         self._cancellation_token.cancel()
         self._player.stop()
         self._status_var.set("Waiting for cleanup before closing...")
+        director = getattr(self, "_director", None)
+        if director is not None and director.winfo_exists():
+            director.close()
 
 
 def main() -> None:

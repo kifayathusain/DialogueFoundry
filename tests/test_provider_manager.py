@@ -94,3 +94,36 @@ def test_piper_prevalidation_checks_installation_before_preview_cache_use(
         provider.validate_configuration(
             SynthesisRequest("Hello", "en_US-lessac-low", "wav")
         )
+
+
+@pytest.mark.parametrize("fail_close", [False, True])
+def test_retained_cast_sessions_reuse_and_close_every_provider(
+    tmp_path, monkeypatch, fail_close
+):
+    models = ModelManager(tmp_path)
+    monkeypatch.setattr(models, "status", lambda model: InstallationState.INSTALLED)
+    manager = ProviderManager(models, retain_sessions=True)
+    kokoro = manager.get("kokoro")
+    piper = manager.get("piper")
+    edge = manager.get("edge")
+    closed = []
+
+    def close_kokoro():
+        closed.append("kokoro")
+        if fail_close:
+            raise RuntimeError("Close failed")
+
+    monkeypatch.setattr(kokoro, "close", close_kokoro)
+    monkeypatch.setattr(piper, "close", lambda: closed.append("piper"))
+    monkeypatch.setattr(edge, "close", lambda: closed.append("edge"))
+    assert manager.get("kokoro") is kokoro
+    assert manager.get("piper") is piper
+    assert not closed
+    if fail_close:
+        with pytest.raises(RuntimeError, match="Close failed"):
+            manager.close()
+    else:
+        manager.close()
+    assert closed == ["kokoro", "piper", "edge"]
+    manager.close()
+    assert closed == ["kokoro", "piper", "edge"]

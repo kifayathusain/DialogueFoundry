@@ -7,8 +7,14 @@ future desktop UI can reuse it without going through this CLI.
 """
 
 import asyncio
+import sys
 
-from ttsapp.config import DEFAULT_FINAL_AUDIO, DEFAULT_INPUT_FILE, DEFAULT_OUTPUT_DIR, VOICES
+from ttsapp.config import (
+    DEFAULT_FINAL_AUDIO,
+    DEFAULT_INPUT_FILE,
+    DEFAULT_OUTPUT_DIR,
+    VOICES,
+)
 from ttsapp.parser import ConversationLine
 from ttsapp.service import generate_conversation
 
@@ -31,4 +37,9 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    if len(sys.argv) == 1:
+        asyncio.run(main())
+    else:
+        from ttsapp.cli import run_cli
+
+        raise SystemExit(run_cli())

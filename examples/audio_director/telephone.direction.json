@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "locale": "en-GB",
+  "required": false,
+  "settings": {
+    "provider": "kokoro", "voices": {}, "speed": null,
+    "timing": {"mode": "natural", "minimum": 0.12, "maximum": 0.45},
+    "scene": {"phone": [{"speaker":"guest","start":2,"end":4}], "room_level":0,"cues":[]}
+  }
+}
+
+

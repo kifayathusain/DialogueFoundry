@@ -35,7 +35,11 @@ def _run_ffmpeg(command: list[str], action: str) -> None:
 
 
 def decode_to_wav(
-    source_file: Path, output_file: Path, cancellation_token: CancellationToken
+    source_file: Path,
+    output_file: Path,
+    cancellation_token: CancellationToken,
+    *,
+    sample_rate: int | None = None,
 ) -> None:
     """Decode compressed native audio once to a lossless mono PCM intermediate."""
     from .audio_process import run_audio_process
@@ -62,6 +66,7 @@ def decode_to_wav(
                 "1",
                 "-c:a",
                 "pcm_s16le",
+                *(["-ar", str(sample_rate)] if sample_rate is not None else []),
                 str(temporary),
             ],
             cancellation_token,

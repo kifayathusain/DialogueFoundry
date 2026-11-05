@@ -1,0 +1,4 @@
+{
+  "speakers": [{"id": "teacher", "role": "Teacher"}],
+  "segments": [{"speaker": "undeclared_student", "text": "This must be reported and never synthesized."}]
+}
